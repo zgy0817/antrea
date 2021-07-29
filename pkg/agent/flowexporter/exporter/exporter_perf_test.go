@@ -1,4 +1,5 @@
 // +build !race
+// +build !benchci
 
 // Copyright 2021 Antrea Authors
 //

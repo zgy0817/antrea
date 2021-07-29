@@ -328,7 +328,7 @@ func TestDeleteAntreaNetworkPolicy(t *testing.T) {
 
 // BenchmarkSyncHandler benchmarks syncHandler when the policy spans 1000 Nodes. Its current result is:
 // 70024 ns/op            8338 B/op          8 allocs/op
-func BenchmarkSyncHandler(b *testing.B) {
+func BenchmarkSyncHandler2(b *testing.B) {
 	nodeNum := 1000
 	nodes := make([]string, 0, nodeNum)
 	for i := 0; i < nodeNum; i++ {

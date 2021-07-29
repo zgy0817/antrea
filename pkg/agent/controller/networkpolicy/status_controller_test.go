@@ -178,7 +178,7 @@ func TestSyncStatusUpForUpdatedPolicy(t *testing.T) {
 
 // BenchmarkSyncHandler benchmarks syncHandler when the policy has 100 rules. Its current result is:
 // 47754 ns/op           15320 B/op         23 allocs/op
-func BenchmarkSyncHandler(b *testing.B) {
+func BenchmarkSyncHandler1(b *testing.B) {
 	statusController, ruleCache, _ := newTestStatusController()
 
 	policy := newNetworkPolicy("policy1", "uid1", []string{"addressGroup1"}, []string{}, []string{"appliedToGroup1"}, nil)
