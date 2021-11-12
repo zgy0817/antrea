@@ -39,6 +39,8 @@ const (
 	podsConnectionNetworkPolicyName = "pods.ingress"
 	workloadNetworkPolicyName       = "workloads.ingress"
 	perftoolContainerName           = "perftool"
+	netperfLinuxContainerName       = "netperf-ubuntu"
+	netperfWindowsContainerName     = "netperf-windows"
 	nginxContainerName              = "nginx"
 )
 

@@ -1345,12 +1345,12 @@ func createPerftestServices(data *TestData, isIPv6 bool) (svcB *corev1.Service, 
 		svcIPFamily = corev1.IPv6Protocol
 	}
 
-	svcB, err = data.CreateService("perftest-b", data.testNamespace, iperfPort, iperfPort, map[string]string{"antrea-e2e": "perftest-b"}, false, false, corev1.ServiceTypeClusterIP, &svcIPFamily)
+	svcB, err = data.CreateService("perftest-b", data.testNamespace, []servicePorts{{port: iperfPort, targetPort: iperfPort}}, map[string]string{"antrea-e2e": "perftest-b"}, false, false, corev1.ServiceTypeClusterIP, &svcIPFamily)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Error when creating perftest-b Service: %v", err)
 	}
 
-	svcC, err = data.CreateService("perftest-c", data.testNamespace, iperfPort, iperfPort, map[string]string{"antrea-e2e": "perftest-c"}, false, false, corev1.ServiceTypeClusterIP, &svcIPFamily)
+	svcC, err = data.CreateService("perftest-c", data.testNamespace, []servicePorts{{port: iperfPort, targetPort: iperfPort}}, map[string]string{"antrea-e2e": "perftest-c"}, false, false, corev1.ServiceTypeClusterIP, &svcIPFamily)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Error when creating perftest-c Service: %v", err)
 	}

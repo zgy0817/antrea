@@ -119,18 +119,23 @@ const (
 
 	nameSuffixLength int = 8
 
-	agnhostImage        = "k8s.gcr.io/e2e-test-images/agnhost:2.29"
-	busyboxImage        = "projects.registry.vmware.com/antrea/busybox"
-	mcjoinImage         = "projects.registry.vmware.com/antrea/mcjoin:v2.9"
-	netshootImage       = "projects.registry.vmware.com/antrea/netshoot:v0.1"
-	nginxImage          = "projects.registry.vmware.com/antrea/nginx:1.21.6-alpine"
-	iisImage            = "mcr.microsoft.com/windows/servercore/iis"
-	perftoolImage       = "projects.registry.vmware.com/antrea/perftool"
-	ipfixCollectorImage = "projects.registry.vmware.com/antrea/ipfix-collector:v0.5.12"
-	ipfixCollectorPort  = "4739"
-	clickHouseHTTPPort  = "8123"
+	agnhostImage          = "k8s.gcr.io/e2e-test-images/agnhost:2.29"
+	busyboxImage          = "projects.registry.vmware.com/antrea/busybox"
+	mcjoinImage           = "projects.registry.vmware.com/antrea/mcjoin:v2.9"
+	netshootImage         = "projects.registry.vmware.com/antrea/netshoot:v0.1"
+	nginxImage            = "projects.registry.vmware.com/antrea/nginx:1.21.6-alpine"
+	iisImage              = "mcr.microsoft.com/windows/servercore/iis"
+	perftoolImage         = "projects.registry.vmware.com/antrea/perftool-ubuntu"
+	perftoolWindowsImage  = "projects.registry.vmware.com/antrea/perftool-windows"
+	netperf27LinuxImage   = "projects.registry.vmware.com/antrea/netperf-ubuntu:2.7"
+	netperf25LinuxImage   = "projects.registry.vmware.com/antrea/netperf-ubuntu:2.5"
+	netperf27WindowsImage = "projects.registry.vmware.com/antrea/netperf-windows:2.5"
+	ipfixCollectorImage   = "projects.registry.vmware.com/antrea/ipfix-collector:v0.5.12"
+	ipfixCollectorPort    = "4739"
+	clickHouseHTTPPort    = "8123"
 
-	nginxLBService = "nginx-loadbalancer"
+	nginxLBService    = "nginx-loadbalancer"
+	servicePortPrefix = "service-port"
 
 	exporterFlowPollInterval            = 1 * time.Second
 	exporterActiveFlowExportTimeout     = 2 * time.Second
@@ -279,6 +284,12 @@ func (p *PodIPs) hasSameIP(p1 *PodIPs) bool {
 		return true
 	}
 	return false
+}
+
+type servicePorts struct {
+	port       int32
+	targetPort int32
+	nodePort   int32
 }
 
 // workerNodeName returns an empty string if there is no worker Node with the provided idx
@@ -1697,14 +1708,14 @@ func validatePodIP(podNetworkCIDR string, ip net.IP) (bool, error) {
 }
 
 // CreateService creates a service with port and targetPort.
-func (data *TestData) CreateService(serviceName, namespace string, port, targetPort int32, selector map[string]string, affinity, nodeLocalExternal bool,
+func (data *TestData) CreateService(serviceName, namespace string, portPairs []servicePorts, selector map[string]string, affinity, nodeLocalExternal bool,
 	serviceType corev1.ServiceType, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
 	annotation := make(map[string]string)
-	return data.CreateServiceWithAnnotations(serviceName, namespace, port, targetPort, corev1.ProtocolTCP, selector, affinity, nodeLocalExternal, serviceType, ipFamily, annotation)
+	return data.CreateServiceWithAnnotations(serviceName, namespace, portPairs, corev1.ProtocolTCP, selector, affinity, nodeLocalExternal, serviceType, ipFamily, annotation)
 }
 
 // CreateServiceWithAnnotations creates a service with Annotation
-func (data *TestData) CreateServiceWithAnnotations(serviceName, namespace string, port, targetPort int32, protocol corev1.Protocol, selector map[string]string, affinity, nodeLocalExternal bool,
+func (data *TestData) CreateServiceWithAnnotations(serviceName, namespace string, portPairs []servicePorts, protocol corev1.Protocol, selector map[string]string, affinity, nodeLocalExternal bool,
 	serviceType corev1.ServiceType, ipFamily *corev1.IPFamily, annotations map[string]string) (*corev1.Service, error) {
 	affinityType := corev1.ServiceAffinityNone
 	var ipFamilies []corev1.IPFamily
@@ -1713,6 +1724,21 @@ func (data *TestData) CreateServiceWithAnnotations(serviceName, namespace string
 	}
 	if affinity {
 		affinityType = corev1.ServiceAffinityClientIP
+	}
+
+	var ports []corev1.ServicePort
+	for i, p := range portPairs {
+		name := fmt.Sprintf("%s-%d", servicePortPrefix, i)
+		port := corev1.ServicePort{
+			Name:       name,
+			Port:       p.port,
+			TargetPort: intstr.FromInt(int(p.targetPort)),
+			Protocol:   protocol,
+		}
+		if serviceType == corev1.ServiceTypeNodePort && p.nodePort != 0 {
+			port.NodePort = p.nodePort
+		}
+		ports = append(ports, port)
 	}
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1726,14 +1752,10 @@ func (data *TestData) CreateServiceWithAnnotations(serviceName, namespace string
 		},
 		Spec: corev1.ServiceSpec{
 			SessionAffinity: affinityType,
-			Ports: []corev1.ServicePort{{
-				Port:       port,
-				TargetPort: intstr.FromInt(int(targetPort)),
-				Protocol:   protocol,
-			}},
-			Type:       serviceType,
-			Selector:   selector,
-			IPFamilies: ipFamilies,
+			Ports:           ports,
+			Type:            serviceType,
+			Selector:        selector,
+			IPFamilies:      ipFamilies,
 		},
 	}
 	if (serviceType == corev1.ServiceTypeNodePort || serviceType == corev1.ServiceTypeLoadBalancer) && nodeLocalExternal {
@@ -1748,7 +1770,7 @@ func (data *TestData) createNginxClusterIPServiceWithAnnotations(nodeName string
 	if clusterInfo.nodesOS[nodeName] == "windows" {
 		selectorLabel = "iis"
 	}
-	return data.CreateServiceWithAnnotations("nginx", data.testNamespace, 80, 80, corev1.ProtocolTCP, map[string]string{"app": selectorLabel}, affinity, false, corev1.ServiceTypeClusterIP, ipFamily, annotation)
+	return data.CreateServiceWithAnnotations("nginx", data.testNamespace, []servicePorts{{port: 80, targetPort: 80}}, corev1.ProtocolTCP, map[string]string{"app": selectorLabel}, affinity, false, corev1.ServiceTypeClusterIP, ipFamily, annotation)
 }
 
 // createNginxClusterIPService creates a nginx service with the given name.
@@ -1756,22 +1778,22 @@ func (data *TestData) createNginxClusterIPService(name, namespace string, affini
 	if name == "" {
 		name = "nginx"
 	}
-	return data.CreateService(name, namespace, 80, 80, map[string]string{"app": "nginx"}, affinity, false, corev1.ServiceTypeClusterIP, ipFamily)
+	return data.CreateService(name, namespace, []servicePorts{{port: 80, targetPort: 80}}, map[string]string{"app": "nginx"}, affinity, false, corev1.ServiceTypeClusterIP, ipFamily)
 }
 
 // createAgnhostClusterIPService creates a ClusterIP agnhost service with the given name.
 func (data *TestData) createAgnhostClusterIPService(serviceName string, affinity bool, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
-	return data.CreateService(serviceName, data.testNamespace, 8080, 8080, map[string]string{"app": "agnhost"}, affinity, false, corev1.ServiceTypeClusterIP, ipFamily)
+	return data.CreateService(serviceName, data.testNamespace, []servicePorts{{port: 8080, targetPort: 8080}}, map[string]string{"app": "agnhost"}, affinity, false, corev1.ServiceTypeClusterIP, ipFamily)
 }
 
 // createAgnhostNodePortService creates a NodePort agnhost service with the given name.
 func (data *TestData) createAgnhostNodePortService(serviceName string, affinity, nodeLocalExternal bool, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
-	return data.CreateService(serviceName, data.testNamespace, 8080, 8080, map[string]string{"app": "agnhost"}, affinity, nodeLocalExternal, corev1.ServiceTypeNodePort, ipFamily)
+	return data.CreateService(serviceName, data.testNamespace, []servicePorts{{port: 8080, targetPort: 8080}}, map[string]string{"app": "agnhost"}, affinity, nodeLocalExternal, corev1.ServiceTypeNodePort, ipFamily)
 }
 
 // createNginxNodePortService creates a NodePort nginx service with the given name.
 func (data *TestData) createNginxNodePortService(serviceName string, affinity, nodeLocalExternal bool, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
-	return data.CreateService(serviceName, data.testNamespace, 80, 80, map[string]string{"app": "nginx"}, affinity, nodeLocalExternal, corev1.ServiceTypeNodePort, ipFamily)
+	return data.CreateService(serviceName, data.testNamespace, []servicePorts{{port: 80, targetPort: 80}}, map[string]string{"app": "nginx"}, affinity, nodeLocalExternal, corev1.ServiceTypeNodePort, ipFamily)
 }
 
 func (data *TestData) updateServiceExternalTrafficPolicy(serviceName string, nodeLocalExternal bool) (*corev1.Service, error) {
@@ -1790,7 +1812,7 @@ func (data *TestData) updateServiceExternalTrafficPolicy(serviceName string, nod
 
 // createAgnhostLoadBalancerService creates a LoadBalancer agnhost service with the given name.
 func (data *TestData) createAgnhostLoadBalancerService(serviceName string, affinity, nodeLocalExternal bool, ingressIPs []string, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
-	svc, err := data.CreateService(serviceName, data.testNamespace, 8080, 8080, map[string]string{"app": "agnhost"}, affinity, nodeLocalExternal, corev1.ServiceTypeLoadBalancer, ipFamily)
+	svc, err := data.CreateService(serviceName, data.testNamespace, []servicePorts{{port: 8080, targetPort: 8080}}, map[string]string{"app": "agnhost"}, affinity, nodeLocalExternal, corev1.ServiceTypeLoadBalancer, ipFamily)
 	if err != nil {
 		return svc, err
 	}
@@ -1809,7 +1831,7 @@ func (data *TestData) createAgnhostLoadBalancerService(serviceName string, affin
 }
 
 func (data *TestData) createNginxLoadBalancerService(affinity bool, ingressIPs []string, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
-	svc, err := data.CreateService(nginxLBService, data.testNamespace, 80, 80, map[string]string{"app": "nginx"}, affinity, false, corev1.ServiceTypeLoadBalancer, ipFamily)
+	svc, err := data.CreateService(nginxLBService, data.testNamespace, []servicePorts{{port: 80, targetPort: 80}}, map[string]string{"app": "nginx"}, affinity, false, corev1.ServiceTypeLoadBalancer, ipFamily)
 	if err != nil {
 		return svc, err
 	}
