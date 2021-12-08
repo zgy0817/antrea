@@ -141,6 +141,7 @@ func (ic *ifConfigurator) configureContainerLink(
 	if err != nil {
 		klog.V(2).Infof("Failed to attach HNS Endpoint to the container, remove it.")
 		if isInfraContainer(containerID) {
+                        klog.Infof("isInfraContainer return true, do ic.removeHNSEndpoint")
 			ic.removeHNSEndpoint(endpoint, containerID)
 		}
 		return fmt.Errorf("failed to configure container IP: %v", err)
@@ -298,9 +299,12 @@ func attachContainerLink(ep *hcsshim.HNSEndpoint, containerID, sandbox, containe
 	if attached {
 		klog.V(2).Infof("HNS Endpoint %s already attached on container %s", ep.Id, containerID)
 	} else {
+                klog.Infof("HNS Endpoint %s didn't attached on container %s", ep.Id, containerID)
 		if hcnEp == nil {
+                        klog.Infof("This is docker runtime, do HotAttachEndpoint")
 			// Docker runtime
 			if err := hcsshim.HotAttachEndpoint(containerID, ep.Id); err != nil {
+                                klog.Infof("For hcsshim.HotAttachEndpoint, err != nil")
 				return nil, err
 			}
 		} else {
