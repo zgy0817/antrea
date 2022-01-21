@@ -1,0 +1,11 @@
+prefix=C:/openvswitch/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: libofproto
+Description: sFlow library of Open vSwitch
+Version: 2.15.3
+Libs: -L${libdir} -lsflow
+Libs.private: -lws2_32 -lShlwapi -liphlpapi -lwbemuuid -lole32 -loleaut32
+Cflags: -I${includedir}/openvswitch
