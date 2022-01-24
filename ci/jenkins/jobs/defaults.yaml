@@ -1,0 +1,43 @@
+- defaults:
+    name: global
+    ghpr_auth: 03cb5220-4665-4336-a31a-86d2837ea3af # credential for vmc jenkins:
+    antrea_admin_list:
+      - antoninbas
+      - jianjuns
+      - tnqn
+      - salv-orlando
+      - poozza
+      - yasensim
+      - yfauser
+      - edwardbadboy
+      - abhiraut
+      - antoninbas
+      - clintkitson
+      - DonghaiHan
+      - frapposelli
+      - jianjuns
+      - ksamoray
+      - lzhecheng
+      - mauilion
+      - mengdie-song
+      - salv-orlando
+      - timothysc
+      - tnqn
+      - tpepper
+      - weiqiangt
+      - wenyingd
+      - suwang48404
+      - ruicao93
+      - gran-vmv
+      - Dyanngg
+      - srikartati
+      - lxiaopei
+      - dreamtalen
+      - zyiou
+      - liu4480
+      - GraysonWu
+    antrea_org_list:
+      - vmware-tanzu
+    antrea_white_list:
+     - '*'
+
