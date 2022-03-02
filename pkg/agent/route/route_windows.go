@@ -44,6 +44,7 @@ const (
 
 var (
 	virtualServiceIPv4Net = util.NewIPNet(config.VirtualServiceIPv4)
+	PodCIDRIPv4           *net.IPNet
 )
 
 type Client struct {
@@ -71,6 +72,7 @@ func NewClient(networkConfig *config.NetworkConfig, noSNAT, proxyAll, connectUpl
 // Service LoadBalancing is provided by OpenFlow.
 func (c *Client) Initialize(nodeConfig *config.NodeConfig, done func()) error {
 	c.nodeConfig = nodeConfig
+	PodCIDRIPv4 = nodeConfig.PodIPv4CIDR
 	bridgeInf, err := net.InterfaceByName(nodeConfig.OVSBridge)
 	if err != nil {
 		return fmt.Errorf("failed to find the interface %s: %v", nodeConfig.OVSBridge, err)
