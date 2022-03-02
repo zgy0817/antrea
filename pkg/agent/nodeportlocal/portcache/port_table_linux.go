@@ -1,4 +1,7 @@
-// Copyright 2020 Antrea Authors
+//go:build !windows
+// +build !windows
+
+// Copyright 2022 Antrea Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +15,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package rules
+package portcache
 
-// PodPortRules is an interface to abstract operations on rules for Pods
-type PodPortRules interface {
-	Init() error
-	AddRule(nodePort int, podIP string, podPort int, protocol string) error
-	DeleteRule(nodePort int, podIP string, podPort int, protocol string) error
-	DeleteAllRules() error
-	AddAllRules(nplList []PodNodePort) error
+// Some actions may be required on other platforms before adding NPL rules.
+// Nothing to do on Linux.
+func PrepareAddRule(protocolSocketData *ProtocolSocketData) error {
+	return nil
+}
+
+// Close socket on linux.
+func HandleCloseSocket(protocolSocketData *ProtocolSocketData) error {
+	if err := protocolSocketData.socket.Close(); err != nil {
+		return err
+	}
+	return nil
 }

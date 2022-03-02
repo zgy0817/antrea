@@ -18,15 +18,18 @@
 package nodeportlocal
 
 import (
-	"errors"
+	"fmt"
+
+	nplk8s "antrea.io/antrea/pkg/agent/nodeportlocal/k8s"
+	"antrea.io/antrea/pkg/agent/nodeportlocal/portcache"
 
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 )
 
-// InitializeNPLAgent starts NodePortLocal (NPL) agent.
-// Currently NPL is disabled for windows.
+// InitializeNPLAgent starts NodePortLocal (NPL) agent on Windows.
+
 func InitializeNPLAgent(
 	kubeClient clientset.Interface,
 	informerFactory informers.SharedInformerFactory,
@@ -34,12 +37,12 @@ func InitializeNPLAgent(
 	endPort int,
 	nodeName string,
 	podInformer cache.SharedIndexInformer,
-) (*windowsCtrl, error) {
-	return nil, errors.New("Windows Platform not supported for NPL")
-}
+) (*nplk8s.NPLController, error) {
+	portTable, err := portcache.NewPortTable(startPort, endPort)
+	if err != nil {
+		return nil, fmt.Errorf("error when initializing NodePortLocal port table: %v", err)
+	}
 
-type windowsCtrl struct {
-}
-
-func (*windowsCtrl) Run(stopCh <-chan struct{}) {
+	svcInformer := informerFactory.Core().V1().Services().Informer()
+	return nplk8s.NewNPLController(kubeClient, podInformer, svcInformer, portTable, nodeName), nil
 }

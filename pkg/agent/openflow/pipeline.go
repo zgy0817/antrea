@@ -295,7 +295,7 @@ type flowCategoryCache struct {
 	sync.Map
 }
 
-func portToUint16(port int) uint16 {
+func PortToUint16(port int) uint16 {
 	if port > 0 && port <= math.MaxUint16 {
 		return uint16(port) // lgtm[go/incorrect-integer-conversion]
 	}
@@ -2449,7 +2449,7 @@ func (c *client) serviceEndpointGroup(groupID binding.GroupIDType, withSessionAf
 	for _, endpoint := range endpoints {
 		endpointPort, _ := endpoint.Port()
 		endpointIP := net.ParseIP(endpoint.IP())
-		portVal := portToUint16(endpointPort)
+		portVal := PortToUint16(endpointPort)
 		ipProtocol := getIPProtocol(endpointIP)
 		if ipProtocol == binding.ProtocolIP {
 			ipVal := binary.BigEndian.Uint32(endpointIP.To4())

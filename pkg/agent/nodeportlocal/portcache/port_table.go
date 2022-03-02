@@ -1,6 +1,3 @@
-//go:build !windows
-// +build !windows
-
 // Copyright 2020 Antrea Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -91,7 +88,7 @@ func (d *NodePortData) CloseSockets() error {
 			// should not happen
 			return fmt.Errorf("protocol %s is still in use, cannot release socket", protocolSocketData.Protocol)
 		case stateOpen:
-			if err := protocolSocketData.socket.Close(); err != nil {
+			if err := HandleCloseSocket(protocolSocketData); err != nil {
 				return fmt.Errorf("error when releasing local port %d with protocol %s: %v", d.NodePort, protocolSocketData.Protocol, err)
 			}
 			protocolSocketData.State = stateClosed
@@ -198,7 +195,7 @@ func closeSockets(protocols []ProtocolSocketData) error {
 		if protocolSocketData.State != stateOpen {
 			continue
 		}
-		if err := protocolSocketData.socket.Close(); err != nil {
+		if err := HandleCloseSocket(protocolSocketData); err != nil {
 			return err
 		}
 		protocolSocketData.State = stateClosed
@@ -290,6 +287,10 @@ func (pt *PortTable) AddRule(podIP string, podPort int, protocol string) (int, e
 		return 0, fmt.Errorf("invalid socket state for %s:%d:%s", podIP, podPort, protocol)
 	}
 
+	if err := PrepareAddRule(protocolSocketData); err != nil {
+		return 0, err
+	}
+
 	nodePort := npData.NodePort
 	if err := pt.PodPortRules.AddRule(nodePort, podIP, podPort, protocol); err != nil {
 		return 0, err
@@ -351,7 +352,7 @@ func (pt *PortTable) DeleteRulesForPod(podIP string) error {
 			if err := pt.PodPortRules.DeleteRule(podEntry.NodePort, podIP, podEntry.PodPort, protocolSocketData.Protocol); err != nil {
 				return err
 			}
-			if err := protocolSocketData.socket.Close(); err != nil {
+			if err := HandleCloseSocket(&protocolSocketData); err != nil {
 				return fmt.Errorf("error when releasing local port %d with protocol %s: %v", podEntry.NodePort, protocolSocketData.Protocol, err)
 			}
 			podEntry.Protocols = podEntry.Protocols[1:]
@@ -378,9 +379,12 @@ func (pt *PortTable) syncRules() error {
 	nplPorts := make([]rules.PodNodePort, 0, len(pt.NodePortTable))
 	for _, npData := range pt.NodePortTable {
 		protocols := make([]string, 0, len(supportedProtocols))
-		for _, protocol := range npData.Protocols {
+		for i, protocol := range npData.Protocols {
 			if protocol.State == stateInUse {
 				protocols = append(protocols, protocol.Protocol)
+				if err := PrepareAddRule(&npData.Protocols[i]); err != nil {
+					return err
+				}
 			}
 		}
 		nplPorts = append(nplPorts, rules.PodNodePort{
@@ -390,7 +394,12 @@ func (pt *PortTable) syncRules() error {
 			Protocols: protocols,
 		})
 	}
-	return pt.PodPortRules.AddAllRules(nplPorts)
+	//if err := pt.PrepareAllPorts(nplPorts); err != nil {return err}
+	if err := pt.PodPortRules.AddAllRules(nplPorts); err != nil {
+		return err
+	}
+	//if err := pt.ReopenAllPorts(nplPorts); err != nil {return err}
+	return nil
 }
 
 // RestoreRules should be called on startup to restore a set of NPL rules. It is non-blocking but
