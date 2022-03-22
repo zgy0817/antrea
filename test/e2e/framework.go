@@ -76,6 +76,7 @@ const (
 	kubeNamespace              string = "kube-system"
 	flowAggregatorNamespace    string = "flow-aggregator"
 	antreaConfigVolume         string = "antrea-config"
+	antreaWindowsConfigVolume  string = "antrea-windows-config"
 	flowAggregatorConfigVolume string = "flow-aggregator-config"
 	antreaDaemonSet            string = "antrea-agent"
 	antreaWindowsDaemonSet     string = "antrea-agent-windows"
@@ -118,9 +119,12 @@ const (
 	mcjoinImage         = "projects.registry.vmware.com/antrea/mcjoin:v2.9"
 	netshootImage       = "projects.registry.vmware.com/antrea/netshoot:v0.1"
 	nginxImage          = "projects.registry.vmware.com/antrea/nginx:1.21.6-alpine"
+	lstcImage           = "mcr.microsoft.com/windows/servercore:ltsc2019"
 	perftoolImage       = "projects.registry.vmware.com/antrea/perftool"
 	ipfixCollectorImage = "projects.registry.vmware.com/antrea/ipfix-collector:v0.5.12"
 	ipfixCollectorPort  = "4739"
+
+
 
 	nginxLBService = "nginx-loadbalancer"
 
@@ -1010,10 +1014,12 @@ func getImageName(uri string) string {
 // createPodOnNode creates a pod in the test namespace with a container whose type is decided by imageName.
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
 // mutateFunc can be used to customize the Pod if the other parameters don't meet the requirements.
-func (data *TestData) createPodOnNode(name string, ns string, nodeName string, image string, command []string, args []string, env []corev1.EnvVar, ports []corev1.ContainerPort, hostNetwork bool, mutateFunc func(*corev1.Pod)) error {
+func (data *TestData) createPodOnNode(name string, ns string, nodeName string, image string, imageName string, command []string, args []string, env []corev1.EnvVar, ports []corev1.ContainerPort, hostNetwork bool, mutateFunc func(*corev1.Pod)) error {
 	// image could be a fully qualified URI which can't be used as container name and label value,
 	// extract the image name from it.
-	imageName := getImageName(image)
+	if imageName == "" {
+		imageName = getImageName(image)
+	}
 	return data.createPodOnNodeInNamespace(name, ns, nodeName, imageName, image, command, args, env, ports, hostNetwork, mutateFunc)
 }
 
@@ -1069,27 +1075,41 @@ func (data *TestData) createPodOnNodeInNamespace(name, ns string, nodeName, ctrN
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
 func (data *TestData) createBusyboxPodOnNode(name string, ns string, nodeName string, hostNetwork bool) error {
 	sleepDuration := 3600 // seconds
-	return data.createPodOnNode(name, ns, nodeName, busyboxImage, []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, hostNetwork, nil)
+	return data.createPodOnNode(name, ns, nodeName, busyboxImage, "", []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, hostNetwork, nil)
 }
 
 // createMcJoinPodOnNode creates a Pod in the test namespace with a single mcjoin container. The
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
 func (data *TestData) createMcJoinPodOnNode(name string, ns string, nodeName string, hostNetwork bool) error {
 	sleepDuration := 3600 // seconds
-	return data.createPodOnNode(name, ns, nodeName, mcjoinImage, []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, hostNetwork, nil)
+	return data.createPodOnNode(name, ns, nodeName, mcjoinImage, "", []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, hostNetwork, nil)
 }
 
 // createNetshootPodOnNode creates a Pod in the test namespace with a single netshoot container. The
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
 func (data *TestData) createNetshootPodOnNode(name string, ns string, nodeName string, _ bool) error {
 	sleepDuration := 3600 // seconds
-	return data.createPodOnNode(name, ns, nodeName, netshootImage, []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, true, nil)
+	return data.createPodOnNode(name, ns, nodeName, netshootImage, "", []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, true, nil)
 }
 
 // createNginxPodOnNode creates a Pod in the test namespace with a single nginx container. The
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
 func (data *TestData) createNginxPodOnNode(name string, ns string, nodeName string, hostNetwork bool) error {
-	return data.createPodOnNode(name, ns, nodeName, nginxImage, []string{}, nil, nil, []corev1.ContainerPort{
+	image := nginxImage
+	var imageName string
+	var command []string
+	imageName = ""
+    command = nil
+	if clusterInfo.nodesOS[nodeName] == "windows" {
+		image = lstcImage
+		command = []string{
+		"powershell.exe",
+		"-command",
+		"<#code used from https://gist.github.com/19WAS85/5424431#> ; $$listener = New-Object System.Net.HttpListener ; $$listener.Prefixes.Add('http://*:80/') ; $$listener.Start() ; $$callerCounts = @{} ; Write-Host('Listening at http://*:80/') ; while ($$listener.IsListening) { ;$$context = $$listener.GetContext() ;$$requestUrl = $$context.Request.Url ;$$clientIP = $$context.Request.RemoteEndPoint.Address ;$$response = $$context.Response ;Write-Host '' ;Write-Host('> {0}' -f $$requestUrl) ;  ;$$count = 1 ;$$k=$$callerCounts.Get_Item($$clientIP) ;if ($$k -ne $$null) { $$count += $$k } ;$$callerCounts.Set_Item($$clientIP, $$count) ;$$ip=(Get-NetAdapter | Get-NetIpAddress); $$header='<html><body><H1>Windows Container Web Server</H1>' ;$$callerCountsString='' ;$$callerCounts.Keys | % { $$callerCountsString+='<p>IP {0} callerCount {1} ' -f $$ip[1].IPAddress,$$callerCounts.Item($$_) } ;$$footer='</body></html>' ;$$content='{0}{1}{2}' -f $$header,$$callerCountsString,$$footer ;Write-Output $$content ;$$buffer = [System.Text.Encoding]::UTF8.GetBytes($$content) ;$$response.ContentLength64 = $$buffer.Length ;$$response.OutputStream.Write($$buffer, 0, $$buffer.Length) ;$$response.Close() ;$$responseStatus = $$response.StatusCode ;Write-Host('< {0}' -f $$responseStatus)  } ; ",
+		}
+		imageName = "nginx"
+	}
+	return data.createPodOnNode(name, ns, nodeName, image, imageName, command, nil, nil, []corev1.ContainerPort{
 		{
 			Name:          "http",
 			ContainerPort: 80,
@@ -1108,7 +1128,7 @@ func (data *TestData) createServerPod(name string, ns string, portName string, p
 		// If hostPort is to be set, it must match the container port number.
 		port.HostPort = int32(portNum)
 	}
-	return data.createPodOnNode(name, ns, "", agnhostImage, nil, []string{cmd}, []corev1.EnvVar{env}, []corev1.ContainerPort{port}, hostNetwork, nil)
+	return data.createPodOnNode(name, ns, "", agnhostImage, "", nil, []string{cmd}, []corev1.EnvVar{env}, []corev1.ContainerPort{port}, hostNetwork, nil)
 }
 
 // createCustomPod creates a Pod in given Namespace with custom labels.
@@ -1767,10 +1787,10 @@ func (data *TestData) runPingCommandFromTestPod(podInfo podInfo, ns string, targ
 }
 
 func (data *TestData) runNetcatCommandFromTestPod(podName string, ns string, server string, port int32) error {
-	return data.runNetcatCommandFromTestPodWithProtocol(podName, ns, server, port, "tcp")
+	return data.runNetcatCommandFromTestPodWithProtocol(podName, ns, busyboxContainerName, server, port, "tcp")
 }
 
-func (data *TestData) runNetcatCommandFromTestPodWithProtocol(podName string, ns string, server string, port int32, protocol string) error {
+func (data *TestData) runNetcatCommandFromTestPodWithProtocol(podName string, ns string, ctrName string, server string, port int32, protocol string) error {
 	// No parameter required for TCP connections.
 	protocolOption := ""
 	if protocol == "udp" {
@@ -1784,7 +1804,7 @@ func (data *TestData) runNetcatCommandFromTestPodWithProtocol(podName string, ns
 			protocolOption, server, port),
 	}
 
-	stdout, stderr, err := data.runCommandFromPod(ns, podName, busyboxContainerName, cmd)
+	stdout, stderr, err := data.runCommandFromPod(ns, podName, ctrName, cmd)
 	if err == nil {
 		return nil
 	}
@@ -1888,6 +1908,28 @@ func GetControllerFeatures() (featuregate.FeatureGate, error) {
 	return getFeatures(antreaControllerConfName)
 }
 
+func (data *TestData) GetAntreaWindowsConfigMap(antreaNamespace string) (*corev1.ConfigMap, error) {
+	daemonset, err := data.clientset.AppsV1().DaemonSets(antreaNamespace).Get(context.TODO(), antreaWindowsDaemonSet, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve Antrea Windows DaemonSet: %v", err)
+	}
+	var configMapName string
+	for _, volume := range daemonset.Spec.Template.Spec.Volumes {
+		if volume.ConfigMap != nil && volume.Name == antreaWindowsConfigVolume {
+			configMapName = volume.ConfigMap.Name
+			break
+		}
+	}
+	if len(configMapName) == 0 {
+		return nil, fmt.Errorf("failed to locate Windows %s ConfigMap volume", antreaWindowsConfigVolume)
+	}
+	configMap, err := data.clientset.CoreV1().ConfigMaps(antreaNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Windows ConfigMap %s: %v", configMapName, err)
+	}
+	return configMap, nil
+}
+
 func (data *TestData) GetAntreaConfigMap(antreaNamespace string) (*corev1.ConfigMap, error) {
 	deployment, err := data.clientset.AppsV1().Deployments(antreaNamespace).Get(context.TODO(), antreaDeployment, metav1.GetOptions{})
 	if err != nil {
@@ -1960,6 +2002,16 @@ func (data *TestData) mutateAntreaConfigMap(
 	restartController bool,
 	restartAgent bool,
 ) error {
+	includeWindowsAgent := false
+	var antreaWindowsConfigMap *corev1.ConfigMap
+	if len(clusterInfo.windowsNodes) != 0 {
+		var err error
+		includeWindowsAgent = true
+		antreaWindowsConfigMap, err = data.GetAntreaWindowsConfigMap(antreaNamespace)
+		if err != nil {
+			return err
+		}
+	}
 	configMap, err := data.GetAntreaConfigMap(antreaNamespace)
 	if err != nil {
 		return err
@@ -2001,10 +2053,10 @@ func (data *TestData) mutateAntreaConfigMap(
 		}
 		configMap.Data["antrea-controller.conf"] = string(b)
 	}
-
-	getAgentConf := func() (*agentconfig.AgentConfig, error) {
+	//getAgentConf should be able to process both windows and linux configmap.
+	getAgentConf := func(cm *corev1.ConfigMap) (*agentconfig.AgentConfig, error) {
 		var agentConf agentconfig.AgentConfig
-		if err := yaml.Unmarshal([]byte(configMap.Data["antrea-agent.conf"]), &agentConf); err != nil {
+		if err := yaml.Unmarshal([]byte(cm.Data["antrea-agent.conf"]), &agentConf); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal Agent config from ConfigMap: %v", err)
 		}
 		// as a convenience, we initialize the FeatureGates map if it is nil
@@ -2015,24 +2067,30 @@ func (data *TestData) mutateAntreaConfigMap(
 	}
 
 	agentConfChanged := false
+	agentConfigMaps := []*corev1.ConfigMap {configMap}
 	if agentChanges != nil {
-		agentConfIn, err := getAgentConf()
-		if err != nil {
-			return err
+		if includeWindowsAgent {
+			agentConfigMaps = append(agentConfigMaps, antreaWindowsConfigMap)
 		}
-		agentConfOut, err := getAgentConf()
-		if err != nil {
-			return err
-		}
+		for _, cm := range agentConfigMaps {
+			agentConfIn, err := getAgentConf(cm)
+			if err != nil {
+				return err
+			}
+			agentConfOut, err := getAgentConf(cm)
+			if err != nil {
+				return err
+			}
 
-		agentChanges(agentConfOut)
-		agentConfChanged = !reflect.DeepEqual(agentConfIn, agentConfOut)
+			agentChanges(agentConfOut)
+			agentConfChanged = !reflect.DeepEqual(agentConfIn, agentConfOut)
 
-		b, err := yaml.Marshal(agentConfOut)
-		if err != nil {
-			return fmt.Errorf("failed to marshal Agent config: %v", err)
+			b, err := yaml.Marshal(agentConfOut)
+			if err != nil {
+				return fmt.Errorf("failed to marshal Agent config: %v", err)
+			}
+			cm.Data["antrea-agent.conf"] = string(b)
 		}
-		configMap.Data["antrea-agent.conf"] = string(b)
 	}
 
 	if !agentConfChanged && !controllerConfChanged {
@@ -2040,9 +2098,12 @@ func (data *TestData) mutateAntreaConfigMap(
 		return nil
 	}
 
-	if _, err := data.clientset.CoreV1().ConfigMaps(antreaNamespace).Update(context.TODO(), configMap, metav1.UpdateOptions{}); err != nil {
-		return fmt.Errorf("failed to update ConfigMap %s: %v", configMap.Name, err)
+	for _, cm := range agentConfigMaps{
+		if _, err := data.clientset.CoreV1().ConfigMaps(antreaNamespace).Update(context.TODO(), cm, metav1.UpdateOptions{}); err != nil {
+			return fmt.Errorf("failed to update ConfigMap %s: %v", cm.Name, err)
+		}
 	}
+
 	if restartAgent && agentConfChanged {
 		err = data.restartAntreaAgentPods(defaultTimeout)
 		if err != nil {
@@ -2283,7 +2344,7 @@ func (data *TestData) copyNodeFiles(nodeName string, fileName string, covDir str
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
 func (data *TestData) createAgnhostPodOnNode(name string, ns string, nodeName string, hostNetwork bool) error {
 	sleepDuration := 3600 // seconds
-	return data.createPodOnNode(name, ns, nodeName, agnhostImage, []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, hostNetwork, nil)
+	return data.createPodOnNode(name, ns, nodeName, agnhostImage, "", []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, hostNetwork, nil)
 }
 
 // createAgnhostPodWithSAOnNode creates a Pod in the test namespace with a single
@@ -2294,7 +2355,7 @@ func (data *TestData) createAgnhostPodWithSAOnNode(name string, ns string, nodeN
 	mutateFunc := func(pod *corev1.Pod) {
 		pod.Spec.ServiceAccountName = serviceAccountName
 	}
-	return data.createPodOnNode(name, ns, nodeName, agnhostImage, []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, hostNetwork, mutateFunc)
+	return data.createPodOnNode(name, ns, nodeName, agnhostImage, "", []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, hostNetwork, mutateFunc)
 }
 
 func (data *TestData) createAgnhostPodOnNodeWithAnnotations(name string, ns string, nodeName string, annotations map[string]string) error {
@@ -2304,7 +2365,7 @@ func (data *TestData) createAgnhostPodOnNodeWithAnnotations(name string, ns stri
 			pod.Annotations[k] = v
 		}
 	}
-	return data.createPodOnNode(name, ns, nodeName, agnhostImage, []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, false, mutateFunc)
+	return data.createPodOnNode(name, ns, nodeName, agnhostImage, "", []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, false, mutateFunc)
 }
 
 func (data *TestData) createDaemonSet(name string, ns string, ctrName string, image string, cmd []string, args []string) (*appsv1.DaemonSet, func() error, error) {

@@ -132,7 +132,7 @@ ip netns exec %[1]s ip link set dev %[1]s-a up && \
 ip netns exec %[1]s ip route replace default via %[3]s && \
 ip netns exec %[1]s /agnhost netexec
 `, tt.fakeServer, tt.serverIP, tt.localIP0, tt.localIP1, tt.ipMaskLen)
-			if err := data.createPodOnNode(tt.fakeServer, testNamespace, egressNode, agnhostImage, []string{"sh", "-c", cmd}, nil, nil, nil, true, func(pod *v1.Pod) {
+			if err := data.createPodOnNode(tt.fakeServer, testNamespace, egressNode, agnhostImage, "", []string{"sh", "-c", cmd}, nil, nil, nil, true, func(pod *v1.Pod) {
 				privileged := true
 				pod.Spec.Containers[0].SecurityContext = &v1.SecurityContext{Privileged: &privileged}
 			}); err != nil {
@@ -246,7 +246,7 @@ ip netns exec %[1]s /agnhost netexec
 				clientIPStr = fmt.Sprintf("[%s]", clientIPStr)
 			}
 			cmd = fmt.Sprintf("wget -T 3 -O - %s:8080/clientip | grep %s:", serverIPStr, clientIPStr)
-			if err := data.createPodOnNode(initialIPChecker, testNamespace, egressNode, busyboxImage, []string{"sh", "-c", cmd}, nil, nil, nil, false, func(pod *v1.Pod) {
+			if err := data.createPodOnNode(initialIPChecker, testNamespace, egressNode, busyboxImage, "", []string{"sh", "-c", cmd}, nil, nil, nil, false, func(pod *v1.Pod) {
 				pod.Spec.RestartPolicy = v1.RestartPolicyNever
 			}); err != nil {
 				t.Fatalf("Failed to create Pod initial-ip-checker: %v", err)

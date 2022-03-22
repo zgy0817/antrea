@@ -649,7 +649,7 @@ sleep 3600`, tt.clientName, tt.clientIP, tt.localIP, tt.clientIPMaskLen)
 
 					baseUrl := net.JoinHostPort(externalIP, strconv.FormatInt(int64(port), 10))
 
-					require.NoError(t, data.createPodOnNode(tt.clientName, testNamespace, host, agnhostImage, []string{"sh", "-c", cmd}, nil, nil, nil, true, func(pod *v1.Pod) {
+					require.NoError(t, data.createPodOnNode(tt.clientName, testNamespace, host, agnhostImage, "", []string{"sh", "-c", cmd}, nil, nil, nil, true, func(pod *v1.Pod) {
 						privileged := true
 						pod.Spec.Containers[0].SecurityContext = &v1.SecurityContext{Privileged: &privileged}
 						delete(pod.Labels, "app")
