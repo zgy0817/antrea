@@ -446,7 +446,7 @@ ip netns exec %[1]s ip link set dev %[1]s-a up && \
 ip netns exec %[1]s ip route replace default via %[3]s && \
 sleep 3600
 `, testNetns, "1.1.1.1", "1.1.1.254", 24)
-	if err := data.createPodOnNode(testPod, testNamespace, controlPlaneNodeName(), agnhostImage, []string{"sh", "-c", cmd}, nil, nil, nil, true, func(pod *corev1.Pod) {
+	if err := data.createPodOnNode(testPod, testNamespace, controlPlaneNodeName(), agnhostImage, "", []string{"sh", "-c", cmd}, nil, nil, nil, true, func(pod *corev1.Pod) {
 		privileged := true
 		pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{Privileged: &privileged}
 	}); err != nil {
@@ -472,7 +472,7 @@ func createAgnhostPod(t *testing.T, data *TestData, podName string, node string,
 		},
 	}
 
-	require.NoError(t, data.createPodOnNode(podName, testNamespace, node, agnhostImage, []string{}, args, nil, ports, hostNetwork, nil))
+	require.NoError(t, data.createPodOnNode(podName, testNamespace, node, agnhostImage, "", []string{}, args, nil, ports, hostNetwork, nil))
 	_, err := data.podWaitForIPs(defaultTimeout, podName, testNamespace)
 	require.NoError(t, err)
 	require.NoError(t, data.podWaitForRunning(defaultTimeout, podName, testNamespace))

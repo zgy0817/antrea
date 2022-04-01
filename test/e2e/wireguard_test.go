@@ -117,7 +117,7 @@ func testServiceConnectivity(t *testing.T, data *TestData) {
 	defer cleanup()
 
 	// Create the a hostNetwork Pod on a Node different from the service's backend Pod, so the service traffic will be transferred across the tunnel.
-	require.NoError(t, data.createPodOnNode(clientPodName, testNamespace, clientPodNode, busyboxImage, []string{"sleep", strconv.Itoa(3600)}, nil, nil, nil, true, nil))
+	require.NoError(t, data.createPodOnNode(clientPodName, testNamespace, clientPodNode, busyboxImage, "", []string{"sleep", strconv.Itoa(3600)}, nil, nil, nil, true, nil))
 	defer data.deletePodAndWait(defaultTimeout, clientPodName, testNamespace)
 	require.NoError(t, data.podWaitForRunning(defaultTimeout, clientPodName, testNamespace))
 
