@@ -26,6 +26,8 @@ import (
 	portcachetesting "antrea.io/antrea/pkg/agent/nodeportlocal/portcache/testing"
 	"antrea.io/antrea/pkg/agent/nodeportlocal/rules"
 	rulestesting "antrea.io/antrea/pkg/agent/nodeportlocal/rules/testing"
+
+	"k8s.io/client-go/tools/cache"
 )
 
 const (
@@ -35,8 +37,7 @@ const (
 
 func newPortTable(mockIPTables rules.PodPortRules, mockPortOpener LocalPortOpener) *PortTable {
 	return &PortTable{
-		NodePortTable:    make(map[string]*NodePortData),
-		PodEndpointTable: make(map[string]*NodePortData),
+		PortTableCache:   cache.NewStore(GetPortTableKey),
 		StartPort:        startPort,
 		EndPort:          endPort,
 		PortSearchStart:  startPort,
@@ -59,12 +60,21 @@ func TestRestoreRules(t *testing.T) {
 			NodePort:  nodePort1,
 			PodPort:   1001,
 			PodIP:     podIP,
-			Protocols: []string{"tcp", "udp"},
+			Protocol:  "tcp",
+			Protocols: []string{"tcp"},
+		},
+		{
+			NodePort:  nodePort1,
+			PodPort:   1001,
+			PodIP:     podIP,
+			Protocol:  "udp",
+			Protocols: []string{"udp"},
 		},
 		{
 			NodePort:  nodePort2,
 			PodPort:   1002,
 			PodIP:     podIP,
+			Protocol:  "udp",
 			Protocols: []string{"udp"},
 		},
 	}
@@ -73,7 +83,6 @@ func TestRestoreRules(t *testing.T) {
 	gomock.InOrder(
 		mockPortOpener.EXPECT().OpenLocalPort(nodePort1, "tcp"),
 		mockPortOpener.EXPECT().OpenLocalPort(nodePort1, "udp"),
-		mockPortOpener.EXPECT().OpenLocalPort(nodePort2, "tcp"),
 		mockPortOpener.EXPECT().OpenLocalPort(nodePort2, "udp"),
 	)
 

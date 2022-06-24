@@ -30,15 +30,6 @@ const (
 	stateInUse protocolSocketState = 1
 )
 
-// podIPPortFormat formats the ip, port to string ip:port.
-func podIPPortProtoFormat(ip string, port int, protocol string) string {
-	return fmt.Sprintf("%s:%d:%s", ip, port, protocol)
-}
-
-func (pt *PortTable) getEntryByPodIPPortProto(ip string, port int, protocol string) *NodePortData {
-	return pt.PodEndpointTable[podIPPortProtoFormat(ip, port, protocol)]
-}
-
 func (pt *PortTable) GetEntry(ip string, port int, protocol string) *NodePortData {
 	pt.tableLock.RLock()
 	defer pt.tableLock.RUnlock()
@@ -50,24 +41,23 @@ func (pt *PortTable) GetEntry(ip string, port int, protocol string) *NodePortDat
 	return nil
 }
 
-func addRuleForPort(podPortRules rules.PodPortRules, port int, podIP string, podPort int, protocol string) ([]ProtocolSocketData, error) {
+func addRuleForPort(podPortRules rules.PodPortRules, port int, podIP string, podPort int, protocol string) (ProtocolSocketData, error) {
 	// Only the protocol used here should be returned if NetNatStaticMapping rule
 	// can be inserted to an unused protocol port.
-	protocols := make([]ProtocolSocketData, 0, 1)
 	err := podPortRules.AddRule(port, podIP, podPort, protocol)
 	if err != nil {
 		klog.ErrorS(err, "Local port cannot be opened", "port", port, "protocol", protocol)
 		return nil, err
 	}
-	protocols = append(protocols, ProtocolSocketData{
+	protocolData := ProtocolSocketData{
 		Protocol: protocol,
 		State:    stateInUse,
 		socket:   nil,
-	})
-	return protocols, nil
+	}
+	return protocolData, nil
 }
 
-func (pt *PortTable) addRuleforFreePort(podIP string, podPort int, protocol string) (int, []ProtocolSocketData, error) {
+func (pt *PortTable) addRuleforFreePort(podIP string, podPort int, protocol string) (int, ProtocolSocketData, error) {
 	klog.V(2).InfoS("Looking for free Node port on Windows", "podIP", podIP, "podPort", podPort, "protocol", protocol)
 	numPorts := pt.EndPort - pt.StartPort + 1
 	for i := 0; i < numPorts; i++ {
@@ -76,12 +66,12 @@ func (pt *PortTable) addRuleforFreePort(podIP string, podPort int, protocol stri
 			// handle wrap around
 			port = port - numPorts
 		}
-		if _, ok := pt.NodePortTable[NodePortProtoFormat(port, protocol)]; ok {
+		if _, ok, _ := pt.getDataFromPortTableCache(NodePortProtoFormat(port, protocol)); ok {
 			// protocol port is already taken
 			continue
 		}
 
-		protocols, err := addRuleForPort(pt.PodPortRules, port, podIP, podPort, protocol)
+		protocolData, err := addRuleForPort(pt.PodPortRules, port, podIP, podPort, protocol)
 		if err != nil {
 			klog.ErrorS(err, "Port cannot be reserved, moving on to the next one", "port", port)
 			continue
@@ -91,7 +81,7 @@ func (pt *PortTable) addRuleforFreePort(podIP string, podPort int, protocol stri
 		if pt.PortSearchStart > pt.EndPort {
 			pt.PortSearchStart = pt.StartPort
 		}
-		return port, protocols, nil
+		return port, protocolData, nil
 	}
 	return 0, nil, fmt.Errorf("no free port found")
 }
@@ -114,8 +104,8 @@ func (pt *PortTable) AddRule(podIP string, podPort int, protocol string) (int, e
 			Protocols: protocols,
 		}
 
-		pt.NodePortTable[NodePortProtoFormat(nodePort, protocol)] = npData
-		pt.PodEndpointTable[podIPPortProtoFormat(podIP, podPort, protocol)] = npData
+		pt.addKeyFromPortTableCache("NodePortTable", NodePortProtoFormat(nodePort, protocol), npData)
+		pt.addKeyFromPortTableCache("PodEndpointTable", podIPPortProtoFormat(podIP, podPort, protocol), npData)
 	} else {
 		// Only add rules for if the entry does not exist.
 		return 0, fmt.Errorf("existed windows nodeport entry for %s:%d:%s", podIP, podPort, protocol)
@@ -143,8 +133,8 @@ func (pt *PortTable) RestoreRules(allNPLPorts []rules.PodNodePort, synced chan<-
 			PodIP:     nplPort.PodIP,
 			Protocols: protocols,
 		}
-		pt.PodEndpointTable[podIPPortProtoFormat(nplPort.PodIP, nplPort.PodPort, nplPort.Protocol)] = pt.NodePortTable[NodePortProtoFormat(nplPort.NodePort, nplPort.Protocol)]
-		pt.NodePortTable[NodePortProtoFormat(nplPort.NodePort, nplPort.Protocol)] = npData
+		pt.addKeyFromPortTableCache("NodePortTable", NodePortProtoFormat(nplPort.NodePort, nplPort.Protocol), npData)
+		pt.addKeyFromPortTableCache("PodEndpointTable", podIPPortProtoFormat(nplPort.PodIP, nplPort.PodPort, nplPort.Protocol), npData)
 	}
 	// No need to sync up again because addRuleForPort has updated all rules on Windows
 	close(synced)
@@ -160,14 +150,14 @@ func (pt *PortTable) DeleteRule(podIP string, podPort int, protocol string) erro
 		return nil
 	}
 	var protocolSocketData *ProtocolSocketData
-	protocolSocketData = &data.Protocols[0]
+	protocolSocketData = &data.Protocol
 	if protocolSocketData != nil {
 		if err := pt.PodPortRules.DeleteRule(data.NodePort, podIP, podPort, protocol); err != nil {
 			return err
 		}
 	}
-	delete(pt.NodePortTable, NodePortProtoFormat(data.NodePort, protocol))
-	delete(pt.PodEndpointTable, podIPPortProtoFormat(podIP, podPort, protocol))
+	pt.delKeyFromPortTableCache("NodePortTable", NodePortProtoFormat(data.NodePort, protocol))
+	pt.delKeyFromPortTableCache("PodEndpointTable", podIPPortProtoFormat(podIP, podPort, protocol))
 	return nil
 }
 
@@ -176,14 +166,12 @@ func (pt *PortTable) DeleteRulesForPod(podIP string) error {
 	defer pt.tableLock.Unlock()
 	podEntries := pt.getDataForPodIP(podIP)
 	for _, podEntry := range podEntries {
-		if len(podEntry.Protocols) > 0 {
-			protocolSocketData := podEntry.Protocols[0]
-			if err := pt.PodPortRules.DeleteRule(podEntry.NodePort, podIP, podEntry.PodPort, protocolSocketData.Protocol); err != nil {
-				return err
-			}
-			delete(pt.PodEndpointTable, podIPPortProtoFormat(podIP, podEntry.PodPort, protocolSocketData.Protocol))
-			delete(pt.NodePortTable, NodePortProtoFormat(podEntry.NodePort, protocolSocketData.Protocol))
+		protocolSocketData := podEntry.Protocol
+		if err := pt.PodPortRules.DeleteRule(podEntry.NodePort, podIP, podEntry.PodPort, protocolSocketData.Protocol); err != nil {
+			return err
 		}
+		pt.delKeyFromPortTableCache("NodePortTable", NodePortProtoFormat(podEntry.NodePort, protocolSocketData.Protocol))
+		pt.delKeyFromPortTableCache("PodEndpointTable", podIPPortProtoFormat(podIP, podEntry.PodPort, protocolSocketData.Protocol))
 	}
 	return nil
 }

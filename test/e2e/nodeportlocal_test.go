@@ -77,7 +77,6 @@ func configureNPLForAgent(t *testing.T, data *TestData, startPort, endPort int) 
 // NodePortLocal related test cases so they can share setup, teardown.
 func TestNodePortLocal(t *testing.T) {
 	skipIfNotIPv4Cluster(t)
-	skipIfHasWindowsNodes(t)
 	skipIfNodePortLocalDisabled(t)
 
 	data, err := setupTest(t)
