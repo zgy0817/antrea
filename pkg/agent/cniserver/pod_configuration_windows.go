@@ -35,13 +35,29 @@ import (
 func (pc *podConfigurator) connectInterfaceToOVSAsync(ifConfig *interfacestore.InterfaceConfig, containerAccess *containerAccessArbitrator) error {
 	ovsPortName := ifConfig.InterfaceName
 	return pc.ifConfigurator.addPostInterfaceCreateHook(ifConfig.ContainerID, ovsPortName, containerAccess, func() error {
+		port, err := pc.ovsBridgeClient.GetPortData(ifConfig.PortUUID, ovsPortName)
+		if err != nil {
+			return fmt.Errorf("failed to  read OVS Port %s: %v", ovsPortName, err)
+		}
+		pc.ovsBridgeClient.DeletePort(ifConfig.PortUUID)
+		attachInfo := make(map[string]interface{})
+		for k, v := range port.ExternalIDs {
+			attachInfo[k] = v
+		}
+		newPortID, err := pc.ovsBridgeClient.CreateInternalPort(ovsPortName, -1, "", attachInfo)
+		if err !=nil {
+			return fmt.Errorf("failed to recreate OVS Port %s: %v", ovsPortName, err)
+		}
+		/*
 		if err := pc.ovsBridgeClient.SetInterfaceType(ovsPortName, "internal"); err != nil {
 			return err
 		}
+		*/
 		ofPort, err := pc.ovsBridgeClient.GetOFPort(ovsPortName, true)
 		if err != nil {
 			return err
 		}
+		ifConfig.PortUUID = newPortID
 		containerID := ifConfig.ContainerID
 		klog.V(2).Infof("Setting up Openflow entries for container %s", containerID)
 		if err := pc.ofClient.InstallPodFlows(ovsPortName, ifConfig.IPs, ifConfig.MAC, uint32(ofPort), ifConfig.VLANID); err != nil {
