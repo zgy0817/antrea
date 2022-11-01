@@ -25,10 +25,12 @@ const (
 	// Invalid ofport_request number is in range 1 to 65,279. For ofport_request number not in the range, OVS
 	// ignore the it and automatically assign a port number.
 	// Here we use an invalid port number "0" to request for automatically port allocation.
-	AutoAssignedOFPort = 0
-	DefaultTunOFPort   = 1
-	HostGatewayOFPort  = 2
-	UplinkOFPort       = 3
+	// AutoAssignedOFPort = 0
+	DefaultTunOFPort  = 1
+	HostGatewayOFPort = 2
+	UplinkOFPort      = 3
+	HostOFPort        = 4
+	OfPortRange       = 65279
 	// 0xfffffffe is a reserved port number in OpenFlow protocol, which is dedicated for the Bridge interface.
 	BridgeOFPort = 0xfffffffe
 )
@@ -100,6 +102,8 @@ func (g *GatewayConfig) String() string {
 
 type AdapterNetConfig struct {
 	Name       string
+	// Set true if the interface is renamed during initialization.
+	Rename     bool
 	Index      int
 	MAC        net.HardwareAddr
 	IPs        []*net.IPNet
@@ -164,8 +168,10 @@ type NodeConfig struct {
 	TunnelOFPort uint32
 	// HostInterfaceOFPort is the OpenFlow port number of the host interface allocated by OVS. The host interface is the
 	// one which the IP/MAC of the uplink is moved to. If the host interface is the OVS bridge interface (br-int), the
-	// value is config.BridgeOFPort.
+	// value is config.HostOFPort.
 	HostInterfaceOFPort uint32
+	// The name of the host interface
+	HostInterfaceName string
 	// The config of the gateway interface on the OVS bridge.
 	GatewayConfig *GatewayConfig
 	// The config of the OVS bridge uplink interface. Only for Windows Node.

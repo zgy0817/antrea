@@ -207,7 +207,7 @@ func TestAntreaFlexibleIPAMConnectivityFlows(t *testing.T) {
 		Routes:     nil,
 		OFPort:     uint32(agentconfig.UplinkOFPort),
 	}
-	config.nodeConfig.HostInterfaceOFPort = agentconfig.BridgeOFPort
+	config.nodeConfig.HostInterfaceOFPort = 0xfffffffe
 	for _, f := range []func(t *testing.T, config *testConfig){
 		testInitialize,
 		testInstallGatewayFlows,

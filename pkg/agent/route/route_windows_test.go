@@ -65,6 +65,10 @@ func TestRouteOperation(t *testing.T) {
 			Name:      hostGateway,
 			LinkIndex: gwLink,
 		},
+		UplinkNetConfig: &config.AdapterNetConfig{
+			Name:  hostGateway,
+			Index: gwLink,
+		},
 	}
 	called := false
 	err = client.Initialize(nodeConfig, func() { called = true })
