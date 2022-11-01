@@ -43,29 +43,28 @@ func (i *Initializer) prepareHostNetwork() error {
 
 // prepareHNSNetworkAndOVSExtension creates HNS Network for containers, and enables OVS Extension on it.
 func (i *Initializer) prepareHNSNetworkAndOVSExtension() error {
+	// Get uplink network configuration. The uplink interface is the one used for transporting Pod traffic across Nodes.
+	// Use the interface specified with "transportInterface" in the configuration if configured, otherwise the interface
+	// configured with NodeIP is used as uplink.
+	_, _, adapter, err := i.getNodeInterfaceFromIP(&utilip.DualStackIPs{IPv4: i.nodeConfig.NodeTransportIPv4Addr.IP})
+	if err != nil {
+		return err
+	}
 	// If the HNS Network already exists, return immediately.
-	hnsNetwork, err := hcsshim.GetHNSNetworkByName(util.LocalHNSNetwork)
+	_, err = hcsshim.GetHNSNetworkByName(util.LocalHNSNetwork)
 	if err == nil {
 		// Enable RSC for existing vSwitch.
 		if err = util.EnableRSCOnVSwitch(util.LocalHNSNetwork); err != nil {
 			return err
 		}
 		// Save the uplink adapter name to check if the OVS uplink port has been created in prepareOVSBridge stage.
-		i.nodeConfig.UplinkNetConfig.Name = hnsNetwork.NetworkAdapterName
-
+		i.nodeConfig.UplinkNetConfig.Name = adapter.Name
 		// Save the uplink adapter MAC to modify Pod traffic source MAC if the packet is directly output to the uplink
 		// interface in OVS pipeline.
-		i.nodeConfig.UplinkNetConfig.MAC, _ = net.ParseMAC(hnsNetwork.SourceMac)
+		i.nodeConfig.UplinkNetConfig.MAC = adapter.HardwareAddr
 		return nil
 	}
 	if _, ok := err.(hcsshim.NetworkNotFoundError); !ok {
-		return err
-	}
-	// Get uplink network configuration. The uplink interface is the one used for transporting Pod traffic across Nodes.
-	// Use the interface specified with "transportInterface" in the configuration if configured, otherwise the interface
-	// configured with NodeIP is used as uplink.
-	_, _, adapter, err := i.getNodeInterfaceFromIP(&utilip.DualStackIPs{IPv4: i.nodeConfig.NodeTransportIPv4Addr.IP})
-	if err != nil {
 		return err
 	}
 	// To forward container traffic to physical network, Transparent HNSNetwork must have a physical adapter attached,
@@ -81,6 +80,23 @@ func (i *Initializer) prepareHNSNetworkAndOVSExtension() error {
 		klog.Errorf("Transparent HNSNetwork requires a physical adapter while the uplink interface \"%s\" is virtual, please detach it from other HNSNetworks and try again", adapter.Name)
 		return fmt.Errorf("uplink \"%s\" is not a physical adapter", adapter.Name)
 	}
+	// Rename ${interfaceName} to ${interfaceName}~
+	var success = false
+	hostIFName := adapter.Name
+	uplinkIFName := util.GenerateUplinkInterfaceName(hostIFName)
+	klog.InfoS("Using the interface", "hostIFName", hostIFName, "uplinkIFName", uplinkIFName)
+	if err = util.RenameInterface(hostIFName, uplinkIFName); err != nil {
+		return err
+	}
+
+	defer func() {
+		if !success {
+			if err = util.RenameInterface(uplinkIFName, hostIFName); err != nil {
+				klog.ErrorS(err, "Failed to rename interface back")
+			}
+		}
+	}()
+
 	i.nodeConfig.UplinkNetConfig.Name = adapter.Name
 	i.nodeConfig.UplinkNetConfig.MAC = adapter.HardwareAddr
 	i.nodeConfig.UplinkNetConfig.IPs = []*net.IPNet{i.nodeConfig.NodeTransportIPv4Addr}
@@ -110,7 +126,9 @@ func (i *Initializer) prepareHNSNetworkAndOVSExtension() error {
 	if subnetCIDR == nil {
 		return fmt.Errorf("failed to find valid IPv4 PodCIDR")
 	}
-	return util.PrepareHNSNetwork(subnetCIDR, i.nodeConfig.NodeTransportIPv4Addr, adapter, i.nodeConfig.UplinkNetConfig.Gateway, dnsServers, i.nodeConfig.UplinkNetConfig.Routes, i.ovsBridge)
+	adapter.Name = uplinkIFName
+	success = true
+	return util.PrepareHNSNetwork(subnetCIDR, i.nodeConfig.NodeTransportIPv4Addr, adapter, i.nodeConfig.UplinkNetConfig.Gateway, dnsServers, i.nodeConfig.UplinkNetConfig.Routes, hostIFName)
 }
 
 func (i *Initializer) prepareVMNetworkAndOVSExtension() error {
@@ -142,7 +160,7 @@ func (i *Initializer) prepareVMNetworkAndOVSExtension() error {
 	hostIFName := i.nodeConfig.UplinkNetConfig.Name
 	uplinkIFName := util.GenerateUplinkInterfaceName(hostIFName)
 	klog.InfoS("Using the interface", "hostIFName", hostIFName, "uplinkIFName", uplinkIFName)
-	// Rename interfaceName to interfaceName~
+	// Rename ${interfaceName} to ${interfaceName}~
 	if err = util.RenameInterface(hostIFName, uplinkIFName); err != nil {
 		return err
 	}
@@ -220,27 +238,27 @@ func (i *Initializer) prepareOVSBridgeOnHNSNetwork() error {
 	}
 
 	// Create local port.
-	brName := i.ovsBridgeClient.GetBridgeName()
-	if _, err = i.ovsBridgeClient.GetOFPort(brName, false); err == nil {
-		klog.Infof("OVS bridge local port %s already exists, skip the configuration", brName)
+	klog.InfoS("Performing OVS configuration", "hostIFName", i.nodeConfig.UplinkNetConfig.Name)
+	hostIFName := i.nodeConfig.UplinkNetConfig.Name
+	if _, err = i.ovsBridgeClient.GetOFPort(hostIFName, false); err == nil {
+		klog.Infof("OVS bridge local port %s already exists, skip the configuration", hostIFName)
 	} else {
-		// OVS does not receive "ofport_request" param when creating local port, so here use config.AutoAssignedOFPort=0
+		// OVS does not receive "ofport_request" param when creating local port, so here use config.HostOFPort=4
 		// to ignore this param.
 		externalIDs := map[string]interface{}{
 			interfacestore.AntreaInterfaceTypeKey: interfacestore.AntreaHost,
 		}
-		if _, err = i.ovsBridgeClient.CreateInternalPort(brName, config.AutoAssignedOFPort, "", externalIDs); err != nil {
+		if _, err = i.ovsBridgeClient.CreateInternalPort(hostIFName, config.HostOFPort, "", externalIDs); err != nil {
 			return err
 		}
 	}
 
 	// If uplink is already exists, return.
-	uplinkNetConfig := i.nodeConfig.UplinkNetConfig
-	uplink := uplinkNetConfig.Name
-	if ofport, err := i.ovsBridgeClient.GetOFPort(uplink, false); err == nil {
-		klog.InfoS("Uplink already exists, skip the configuration", "uplink", uplink, "port", ofport)
+	uplinkIFName := util.GenerateUplinkInterfaceName(hostIFName)
+	if ofport, err := i.ovsBridgeClient.GetOFPort(uplinkIFName, false); err == nil {
+		klog.InfoS("Uplink already exists, skip the configuration", "uplink", uplinkIFName, "port", ofport)
 		i.nodeConfig.UplinkNetConfig.OFPort = uint32(ofport)
-		i.nodeConfig.HostInterfaceOFPort = config.BridgeOFPort
+		i.nodeConfig.HostInterfaceOFPort = config.HostOFPort
 		return nil
 	}
 	// Create uplink port.
@@ -250,19 +268,24 @@ func (i *Initializer) prepareOVSBridgeOnHNSNetwork() error {
 		return err
 	}
 	var uplinkPortUUID string
-	uplinkPortUUID, err = i.ovsBridgeClient.CreateUplinkPort(uplink, freePort, nil)
+	uplinkPortUUID, err = i.ovsBridgeClient.CreateUplinkPort(uplinkIFName, freePort, nil)
 	if err != nil {
-		klog.Errorf("Failed to add uplink port %s: %v", uplink, err)
+		klog.Errorf("Failed to add uplink port %s: %v", uplinkIFName, err)
 		return err
 	}
-	uplinkOFPort, err := i.ovsBridgeClient.GetOFPort(uplink, false)
+	uplinkOFPort, err := i.ovsBridgeClient.GetOFPort(uplinkIFName, false)
 	if err != nil {
-		return fmt.Errorf("failed to get uplink ofport %s: err=%w", uplink, err)
+		return fmt.Errorf("failed to get uplink ofport %s: err=%w", uplinkIFName, err)
 	}
-	klog.InfoS("Allocated OpenFlow port for uplink interface", "port", uplink, "ofPort", uplinkOFPort)
+	// Query the host port to check if its created
+	hostOFPort, err := i.ovsBridgeClient.GetOFPort(hostIFName, false)
+	if err != nil {
+		return fmt.Errorf("failed to get ofport for host interface %s: %v", hostIFName, err)
+	}
+	klog.InfoS("Allocated OpenFlow port for uplink interface", "port", uplinkIFName, "ofPort", uplinkOFPort)
 	i.nodeConfig.UplinkNetConfig.OFPort = uint32(uplinkOFPort)
-	i.nodeConfig.HostInterfaceOFPort = config.BridgeOFPort
-	uplinkInterface := interfacestore.NewUplinkInterface(uplink)
+	i.nodeConfig.HostInterfaceOFPort = uint32(hostOFPort)
+	uplinkInterface := interfacestore.NewUplinkInterface(uplinkIFName)
 	uplinkInterface.OVSPortConfig = &interfacestore.OVSPortConfig{uplinkPortUUID, uplinkOFPort} //nolint: govet
 	i.ifaceStore.AddInterface(uplinkInterface)
 	ovsCtlClient := ovsctl.NewClient(i.ovsBridge)
@@ -272,7 +295,7 @@ func (i *Initializer) prepareOVSBridgeOnHNSNetwork() error {
 	// connection are routed to the selected backend Pod via the bridge interface; if we do not enable IP forwarding on
 	// the bridge interface, the packet will be discarded on the bridge interface as the destination of the packet
 	// is not the Node.
-	if err = util.EnableIPForwarding(brName); err != nil {
+	if err = util.EnableIPForwarding(hostIFName); err != nil {
 		return err
 	}
 	// Set the uplink with "no-flood" config, so that the IP of local Pods and "antrea-gw0" will not be leaked to the

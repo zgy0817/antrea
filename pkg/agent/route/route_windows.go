@@ -74,9 +74,9 @@ func NewClient(networkConfig *config.NetworkConfig, noSNAT, proxyAll, connectUpl
 func (c *Client) Initialize(nodeConfig *config.NodeConfig, done func()) error {
 	c.nodeConfig = nodeConfig
 	PodCIDRIPv4 = nodeConfig.PodIPv4CIDR
-	bridgeInf, err := net.InterfaceByName(nodeConfig.OVSBridge)
+	bridgeInf, err := net.InterfaceByName(nodeConfig.UplinkNetConfig.Name)
 	if err != nil {
-		return fmt.Errorf("failed to find the interface %s: %v", nodeConfig.OVSBridge, err)
+		return fmt.Errorf("failed to find the interface %s: %v", nodeConfig.UplinkNetConfig.Name, err)
 	}
 	c.bridgeInfIndex = bridgeInf.Index
 	if err := c.initFwRules(); err != nil {
