@@ -47,6 +47,7 @@ type OVSBridgeClient interface {
 	CreateUplinkPort(name string, ofPortRequest int32, externalIDs map[string]interface{}) (string, Error)
 	DeletePort(portUUID string) Error
 	DeletePorts(portUUIDList []string) Error
+	DeletePortByName(portName string) Error
 	GetOFPort(ifName string, waitUntilValid bool) (int32, Error)
 	GetPortData(portUUID, ifName string) (*OVSPortData, Error)
 	GetPortList() ([]OVSPortData, Error)

@@ -359,6 +359,29 @@ func (br *OVSBridge) DeletePort(portUUID string) Error {
 	return nil
 }
 
+// DeletePortByName deletes the port with the provided portName.
+// If the port does not exist no change will be done.
+func (br *OVSBridge) DeletePortByName(portName string) Error {
+	tx := br.ovsdb.Transaction(openvSwitchSchema)
+	tx.Select(dbtransaction.Select{
+        Table:  "Port",
+        Columns: []string{"_uuid"},
+        Where:  [][]interface{}{{"name", "==", portName}},
+    })
+    res, err, temporary := tx.Commit()
+	if err != nil {
+		klog.Error("Transaction failed: ", err)
+		return NewTransactionError(err, temporary)
+	}
+    if len(res[0].Rows) == 0 {
+        return NewTransactionError(fmt.Errorf("port %s not found", portName), false)
+    }
+    port := res[0].Rows[0].(map[string]interface{})
+    uuid := port["_uuid"].([]interface{})[1].(string)
+
+	return br.DeletePort(uuid)
+}
+
 // CreateInternalPort creates an internal port with the specified name on the
 // bridge.
 // If externalIDs is not empty, the map key/value pairs will be set to the

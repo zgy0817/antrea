@@ -291,7 +291,7 @@ func (i *Initializer) initInterfaceStore() error {
 			case interfacestore.AntreaTunnel:
 				intf = parseTunnelInterfaceFunc(port, ovsPort)
 			case interfacestore.AntreaHost:
-				if port.Name == i.ovsBridge {
+				if i.nodeConfig.Type == config.K8sNode {
 					// Need not to load the OVS bridge port to the interfaceStore
 					intf = nil
 				} else {
@@ -315,7 +315,8 @@ func (i *Initializer) initInterfaceStore() error {
 		} else {
 			// Antrea Interface type is not saved in OVS port external_ids in earlier Antrea versions, so we use
 			// the old way to decide the interface type for the upgrade case.
-			uplinkIfName := i.nodeConfig.UplinkNetConfig.Name
+			hostIfName := i.nodeConfig.UplinkNetConfig.Name
+			uplinkIfName := util.GenerateUplinkInterfaceName(hostIfName)
 			var antreaIFType string
 			switch {
 			case port.OFPort == config.HostGatewayOFPort:
