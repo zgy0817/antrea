@@ -17,9 +17,13 @@ package fake
 import (
 	"context"
 
+	"k8s.io/client-go/testing"
+
 	"antrea.io/antrea/pkg/apis/controlplane/v1beta2"
 )
 
 func (c *FakeSupportBundleCollections) UpdateStatus(ctx context.Context, name string, status *v1beta2.SupportBundleCollectionStatus) error {
-	return nil
+	_, err := c.Fake.
+		Invokes(testing.NewUpdateSubresourceAction(supportbundlecollectionsResource, "status", "", status), &v1beta2.SupportBundleCollectionStatus{})
+	return err
 }

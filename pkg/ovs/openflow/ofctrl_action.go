@@ -252,6 +252,13 @@ func (a *ofFlowAction) SetTunnelDst(addr net.IP) FlowBuilder {
 	return a.builder
 }
 
+// SetTunnelID is an action to modify packet tunnel ID to the specified ID.
+func (a *ofFlowAction) SetTunnelID(tunnelID uint64) FlowBuilder {
+	setTunIDAct := &ofctrl.SetTunnelIDAction{TunnelID: tunnelID}
+	a.builder.ApplyAction(setTunIDAct)
+	return a.builder
+}
+
 // PopVLAN is an action to pop VLAN ID.
 func (a *ofFlowAction) PopVLAN() FlowBuilder {
 	popVLANAct := &ofctrl.PopVLANAction{}
@@ -642,12 +649,6 @@ func (a *ofLearnAction) LoadRegMark(marks ...*RegMark) LearnAction {
 		}
 		a.nxLearn.AddLoadAction(toField, uint16(mark.field.rng.Length()), nil, valBuf[4-offset:])
 	}
-	return a
-}
-
-func (a *ofLearnAction) SetDstMAC(mac net.HardwareAddr) LearnAction {
-	toField := &ofctrl.LearnField{Name: "NXM_OF_ETH_DST"}
-	a.nxLearn.AddLoadAction(toField, 48, nil, mac)
 	return a
 }
 

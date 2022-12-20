@@ -60,7 +60,9 @@ import (
 	"antrea.io/antrea/pkg/agent/secondarynetwork/cnipodcache"
 	"antrea.io/antrea/pkg/agent/secondarynetwork/podwatch"
 	"antrea.io/antrea/pkg/agent/stats"
+	support "antrea.io/antrea/pkg/agent/supportbundlecollection"
 	agenttypes "antrea.io/antrea/pkg/agent/types"
+	"antrea.io/antrea/pkg/apis/controlplane"
 	crdinformers "antrea.io/antrea/pkg/client/informers/externalversions"
 	crdv1alpha1informers "antrea.io/antrea/pkg/client/informers/externalversions/crd/v1alpha1"
 	"antrea.io/antrea/pkg/controller/externalippool"
@@ -132,6 +134,8 @@ func run(o *Options) error {
 	egressEnabled := features.DefaultFeatureGate.Enabled(features.Egress)
 	enableAntreaIPAM := features.DefaultFeatureGate.Enabled(features.AntreaIPAM)
 	enableBridgingMode := enableAntreaIPAM && o.config.EnableBridgingMode
+	enableNodePortLocal := features.DefaultFeatureGate.Enabled(features.NodePortLocal) && o.config.NodePortLocal.Enable
+	enableMulticluster := features.DefaultFeatureGate.Enabled(features.Multicluster) && o.config.Multicluster.Enable
 	// Bridging mode will connect the uplink interface to the OVS bridge.
 	connectUplinkToBridge := enableBridgingMode
 
@@ -279,10 +283,42 @@ func run(o *Options) error {
 		)
 	}
 
+	// podUpdateChannel is a channel for receiving Pod updates from CNIServer and
+	// notifying NetworkPolicyController, StretchedNetworkPolicyController and
+	// EgressController to reconcile rules related to the updated Pods.
+	var podUpdateChannel *channel.SubscribableChannel
+	// externalEntityUpdateChannel is a channel for receiving ExternalEntity updates from ExternalNodeController and
+	// notifying NetworkPolicyController to reconcile rules related to the updated ExternalEntities.
+	var externalEntityUpdateChannel *channel.SubscribableChannel
+	if o.nodeType == config.K8sNode {
+		podUpdateChannel = channel.NewSubscribableChannel("PodUpdate", 100)
+	} else {
+		externalEntityUpdateChannel = channel.NewSubscribableChannel("ExternalEntityUpdate", 100)
+	}
+
+	// Initialize localPodInformer for NPLAgent, AntreaIPAMController,
+	// StretchedNetworkPolicyController, and secondary network controller.
+	var localPodInformer cache.SharedIndexInformer
+	if enableNodePortLocal || enableBridgingMode || enableMulticluster ||
+		features.DefaultFeatureGate.Enabled(features.SecondaryNetwork) ||
+		features.DefaultFeatureGate.Enabled(features.TrafficControl) {
+		listOptions := func(options *metav1.ListOptions) {
+			options.FieldSelector = fields.OneTermEqualSelector("spec.nodeName", nodeConfig.Name).String()
+		}
+		localPodInformer = coreinformers.NewFilteredPodInformer(
+			k8sClient,
+			metav1.NamespaceAll,
+			resyncPeriodDisabled,
+			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, // NamespaceIndex is used in NPLController.
+			listOptions,
+		)
+	}
+
 	var mcRouteController *mcroute.MCRouteController
+	var mcStrechedNetworkPolicyController *mcroute.StretchedNetworkPolicyController
 	var mcInformerFactory mcinformers.SharedInformerFactory
 
-	if features.DefaultFeatureGate.Enabled(features.Multicluster) && o.config.Multicluster.Enable {
+	if enableMulticluster {
 		mcNamespace := env.GetPodNamespace()
 		if o.config.Multicluster.Namespace != "" {
 			mcNamespace = o.config.Multicluster.Namespace
@@ -290,6 +326,7 @@ func run(o *Options) error {
 		mcInformerFactory = mcinformers.NewSharedInformerFactory(mcClient, informerDefaultResync)
 		gwInformer := mcInformerFactory.Multicluster().V1alpha1().Gateways()
 		ciImportInformer := mcInformerFactory.Multicluster().V1alpha1().ClusterInfoImports()
+		labelIDInformer := mcInformerFactory.Multicluster().V1alpha1().LabelIdentities()
 		mcRouteController = mcroute.NewMCRouteController(
 			mcClient,
 			gwInformer,
@@ -299,7 +336,18 @@ func run(o *Options) error {
 			ifaceStore,
 			nodeConfig,
 			mcNamespace,
+			o.config.Multicluster.EnableStretchedNetworkPolicy,
 		)
+		if o.config.Multicluster.EnableStretchedNetworkPolicy {
+			mcStrechedNetworkPolicyController = mcroute.NewMCAgentStretchedNetworkPolicyController(
+				ofClient,
+				ifaceStore,
+				localPodInformer,
+				informerFactory.Core().V1().Namespaces(),
+				labelIDInformer,
+				podUpdateChannel,
+			)
+		}
 	}
 	var groupCounters []proxytypes.GroupCounter
 	groupIDUpdates := make(chan string, 100)
@@ -331,19 +379,6 @@ func run(o *Options) error {
 		}
 	}
 
-	// podUpdateChannel is a channel for receiving Pod updates from CNIServer and
-	// notifying NetworkPolicyController and EgressController to reconcile rules
-	// related to the updated Pods.
-	var podUpdateChannel *channel.SubscribableChannel
-	// externalEntityUpdateChannel is a channel for receiving ExternalEntity updates from ExternalNodeController and
-	// notifying NetworkPolicyController to reconcile rules related to the updated ExternalEntities.
-	var externalEntityUpdateChannel *channel.SubscribableChannel
-	if o.nodeType == config.K8sNode {
-		podUpdateChannel = channel.NewSubscribableChannel("PodUpdate", 100)
-	} else {
-		externalEntityUpdateChannel = channel.NewSubscribableChannel("ExternalEntityUpdate", 100)
-	}
-
 	// We set flow poll interval as the time interval for rule deletion in the async
 	// rule cache, which is implemented as part of the idAllocator. This is to preserve
 	// the rule info for populating NetworkPolicy fields in the Flow Exporter even
@@ -362,11 +397,15 @@ func run(o *Options) error {
 		tunPort = nodeConfig.TunnelOFPort
 	}
 
+	nodeKey := nodeConfig.Name
+	if o.nodeType == config.ExternalNode {
+		nodeKey = k8s.NamespacedName(o.config.ExternalNode.ExternalNodeNamespace, nodeKey)
+	}
 	networkPolicyController, err := networkpolicy.NewNetworkPolicyController(
 		antreaClientProvider,
 		ofClient,
 		ifaceStore,
-		nodeConfig.Name,
+		nodeKey,
 		podUpdateChannel,
 		externalEntityUpdateChannel,
 		groupCounters,
@@ -496,6 +535,7 @@ func run(o *Options) error {
 			traceflowInformer,
 			ofClient,
 			networkPolicyController,
+			egressController,
 			ovsBridgeClient,
 			ifaceStore,
 			networkConfig,
@@ -550,25 +590,6 @@ func run(o *Options) error {
 			return fmt.Errorf("error when creating IPFIX flow exporter: %v", err)
 		}
 		networkPolicyController.SetDenyConnStore(flowExporter.GetDenyConnStore())
-	}
-
-	enableNodePortLocal := features.DefaultFeatureGate.Enabled(features.NodePortLocal) && o.config.NodePortLocal.Enable
-
-	// Initialize localPodInformer for NPLAgent, AntreaIPAMController, and secondary network controller.
-	var localPodInformer cache.SharedIndexInformer
-	if enableNodePortLocal || enableBridgingMode ||
-		features.DefaultFeatureGate.Enabled(features.SecondaryNetwork) ||
-		features.DefaultFeatureGate.Enabled(features.TrafficControl) {
-		listOptions := func(options *metav1.ListOptions) {
-			options.FieldSelector = fields.OneTermEqualSelector("spec.nodeName", nodeConfig.Name).String()
-		}
-		localPodInformer = coreinformers.NewFilteredPodInformer(
-			k8sClient,
-			metav1.NamespaceAll,
-			resyncPeriodDisabled,
-			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, // NamespaceIndex is used in NPLController.
-			listOptions,
-		)
 	}
 
 	log.StartLogFileNumberMonitor(stopCh)
@@ -724,9 +745,12 @@ func run(o *Options) error {
 		go mcastController.Run(stopCh)
 	}
 
-	if features.DefaultFeatureGate.Enabled(features.Multicluster) && o.config.Multicluster.Enable {
+	if enableMulticluster {
 		mcInformerFactory.Start(stopCh)
 		go mcRouteController.Run(stopCh)
+		if o.config.Multicluster.EnableStretchedNetworkPolicy {
+			go mcStrechedNetworkPolicyController.Run(stopCh)
+		}
 	}
 
 	// statsCollector collects stats and reports to the antrea-controller periodically. For now it's only used for
@@ -744,11 +768,25 @@ func run(o *Options) error {
 		ovsBridgeClient,
 		proxier,
 		networkPolicyController,
-		o.config.APIPort)
+		o.config.APIPort,
+		o.config.NodePortLocal.PortRange,
+	)
 
 	agentMonitor := monitor.NewAgentMonitor(crdClient, agentQuerier)
 
 	go agentMonitor.Run(stopCh)
+
+	if features.DefaultFeatureGate.Enabled(features.SupportBundleCollection) {
+		nodeNamespace := ""
+		nodeType := controlplane.SupportBundleCollectionNodeTypeNode
+		if o.nodeType == config.ExternalNode {
+			nodeNamespace = o.config.ExternalNode.ExternalNodeNamespace
+			nodeType = controlplane.SupportBundleCollectionNodeTypeExternalNode
+		}
+		supportBundleController := support.NewSupportBundleController(nodeConfig.Name, nodeType, nodeNamespace, antreaClientProvider,
+			ovsctl.NewClient(o.config.OVSBridge), agentQuerier, networkPolicyController, v4Enabled, v6Enabled)
+		go supportBundleController.Run(stopCh)
+	}
 
 	bindAddress := net.IPv4zero
 	if o.nodeType == config.ExternalNode {

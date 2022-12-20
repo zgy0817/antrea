@@ -38,6 +38,7 @@ const (
 	ComponentRouting       TraceflowComponent = "Routing"
 	ComponentNetworkPolicy TraceflowComponent = "NetworkPolicy"
 	ComponentForwarding    TraceflowComponent = "Forwarding"
+	ComponentEgress        TraceflowComponent = "Egress"
 )
 
 type TraceflowAction string
@@ -51,6 +52,8 @@ const (
 	// ActionForwardedOutOfOverlay indicates that the packet has been forwarded out of the network
 	// managed by Antrea. This indicates that the Traceflow request can be considered complete.
 	ActionForwardedOutOfOverlay TraceflowAction = "ForwardedOutOfOverlay"
+	ActionMarkedForSNAT         TraceflowAction = "MarkedForSNAT"
+	ActionForwardedToEgressNode TraceflowAction = "ForwardedToEgressNode"
 )
 
 // List the supported protocols and their codes in traceflow.
@@ -264,6 +267,8 @@ type Observation struct {
 	DstMAC string `json:"dstMAC,omitempty" yaml:"dstMAC,omitempty"`
 	// NetworkPolicy is the combination of Namespace and NetworkPolicyName.
 	NetworkPolicy string `json:"networkPolicy,omitempty" yaml:"networkPolicy,omitempty"`
+	// Egress is the name of the Egress.
+	Egress string `json:"egress,omitempty" yaml:"egress,omitempty"`
 	// TTL is the observation TTL.
 	TTL int32 `json:"ttl,omitempty" yaml:"ttl,omitempty"`
 	// TranslatedSrcIP is the translated source IP.
@@ -272,6 +277,7 @@ type Observation struct {
 	TranslatedDstIP string `json:"translatedDstIP,omitempty" yaml:"translatedDstIP,omitempty"`
 	// TunnelDstIP is the tunnel destination IP.
 	TunnelDstIP string `json:"tunnelDstIP,omitempty" yaml:"tunnelDstIP,omitempty"`
+	EgressIP    string `json:"egressIP,omitempty" yaml:"egressIP,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -409,12 +415,15 @@ type Rule struct {
 	// +optional
 	To []NetworkPolicyPeer `json:"to,omitempty"`
 	// Rule is matched if traffic is intended for a Service listed in this field.
-	// Currently only ClusterIP types Services are supported in this field. This field
-	// can only be used when AntreaProxy is enabled. This field can't be used with To
-	// or Ports. If this field and To are both empty or missing, this rule matches all
-	// destinations.
+	// Currently, only ClusterIP types Services are supported in this field.
+	// When scope is set to ClusterSet, it matches traffic intended for a multi-cluster
+	// Service listed in this field. Service name and Namespace provided should match
+	// the original exported Service.
+	// This field can only be used when AntreaProxy is enabled. This field can't be used
+	// with To or Ports. If this field and To are both empty or missing, this rule matches
+	// all destinations.
 	// +optional
-	ToServices []NamespacedName `json:"toServices,omitempty"`
+	ToServices []PeerService `json:"toServices,omitempty"`
 	// Name describes the intention of this rule.
 	// Name should be unique within the policy.
 	// +optional
@@ -698,6 +707,14 @@ type TierList struct {
 type NamespacedName struct {
 	Name      string `json:"name,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
+}
+
+// PeerService refers to a Service, which can be a in-cluster Service or
+// imported multi-cluster service.
+type PeerService struct {
+	Name      string    `json:"name,omitempty"`
+	Namespace string    `json:"namespace,omitempty"`
+	Scope     PeerScope `json:"scope,omitempty"`
 }
 
 // NetworkPolicyProtocol defines additional protocols that are not supported by

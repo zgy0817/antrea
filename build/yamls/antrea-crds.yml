@@ -1009,6 +1009,8 @@ spec:
                               type: string
                             namespace:
                               type: string
+                            scope:
+                              type: string
                       name:
                         type: string
                       enableLogging:
@@ -2062,6 +2064,8 @@ spec:
                               type: string
                             namespace:
                               type: string
+                            scope:
+                              type: string
                       name:
                         type: string
                       enableLogging:
@@ -2482,6 +2486,10 @@ spec:
                             translatedDstIP:
                               type: string
                             tunnelDstIP:
+                              type: string
+                            egressIP:
+                              type: string
+                            egress:
                               type: string
                 capturedPacket:
                   properties:

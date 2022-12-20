@@ -67,8 +67,8 @@ func TestServiceExportReconciler_handleDeleteEvent(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(exportedSvcNginx).Build()
 	fakeRemoteClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existSvcResExport, existEpResExport).Build()
 
-	commonArea := commonarea.NewFakeRemoteCommonArea(fakeRemoteClient, "leader-cluster", localClusterID, "default")
-	mcReconciler := NewMemberClusterSetReconciler(fakeClient, scheme, "default")
+	commonArea := commonarea.NewFakeRemoteCommonArea(fakeRemoteClient, "leader-cluster", localClusterID, "default", nil)
+	mcReconciler := NewMemberClusterSetReconciler(fakeClient, scheme, "default", false)
 	mcReconciler.SetRemoteCommonArea(commonArea)
 	r := NewServiceExportReconciler(fakeClient, scheme, mcReconciler, "ClusterIP")
 	r.installedSvcs.Add(&svcInfo{
@@ -203,9 +203,9 @@ func TestServiceExportReconciler_CheckExportStatus(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(mcsSvc, nginx0Svc, nginx1Svc, nginx1EP, nginx2Svc, existSvcExport,
 		nginx0SvcExport, nginx1SvcExportWithStatus, nginx2SvcExportWithStatus, mcsSvcExport).Build()
 	fakeRemoteClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	commonArea := commonarea.NewFakeRemoteCommonArea(fakeRemoteClient, "leader-cluster", localClusterID, "default")
+	commonArea := commonarea.NewFakeRemoteCommonArea(fakeRemoteClient, "leader-cluster", localClusterID, "default", nil)
 
-	mcReconciler := NewMemberClusterSetReconciler(fakeClient, scheme, "default")
+	mcReconciler := NewMemberClusterSetReconciler(fakeClient, scheme, "default", false)
 	mcReconciler.SetRemoteCommonArea(commonArea)
 	r := NewServiceExportReconciler(fakeClient, scheme, mcReconciler, "ClusterIP")
 	for _, tt := range tests {
@@ -235,8 +235,8 @@ func TestServiceExportReconciler_handleServiceExportCreateEvent(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(svcNginx, epNginx, existSvcExport).Build()
 	fakeRemoteClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	commonArea := commonarea.NewFakeRemoteCommonArea(fakeRemoteClient, "leader-cluster", localClusterID, "default")
-	mcReconciler := NewMemberClusterSetReconciler(fakeClient, scheme, "default")
+	commonArea := commonarea.NewFakeRemoteCommonArea(fakeRemoteClient, "leader-cluster", localClusterID, "default", nil)
+	mcReconciler := NewMemberClusterSetReconciler(fakeClient, scheme, "default", false)
 	mcReconciler.SetRemoteCommonArea(commonArea)
 	r := NewServiceExportReconciler(fakeClient, scheme, mcReconciler, "ClusterIP")
 	if _, err := r.Reconcile(ctx, nginxReq); err != nil {
@@ -399,8 +399,8 @@ func TestServiceExportReconciler_handleUpdateEvent(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.existingService, tt.existingEndpoints, existSvcExport).Build()
 			fakeRemoteClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existSvcRe, existEpRe).Build()
 
-			commonArea := commonarea.NewFakeRemoteCommonArea(fakeRemoteClient, "leader-cluster", localClusterID, "default")
-			mcReconciler := NewMemberClusterSetReconciler(fakeClient, scheme, "default")
+			commonArea := commonarea.NewFakeRemoteCommonArea(fakeRemoteClient, "leader-cluster", localClusterID, "default", nil)
+			mcReconciler := NewMemberClusterSetReconciler(fakeClient, scheme, "default", false)
 			mcReconciler.SetRemoteCommonArea(commonArea)
 			r := NewServiceExportReconciler(fakeClient, scheme, mcReconciler, tt.endpointIPType)
 			r.installedSvcs.Add(sinfo)

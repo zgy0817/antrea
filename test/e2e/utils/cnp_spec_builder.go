@@ -244,7 +244,7 @@ func (b *ClusterNetworkPolicySpecBuilder) AddFQDNRule(fqdn string,
 	return b
 }
 
-func (b *ClusterNetworkPolicySpecBuilder) AddToServicesRule(svcRefs []crdv1alpha1.NamespacedName,
+func (b *ClusterNetworkPolicySpecBuilder) AddToServicesRule(svcRefs []crdv1alpha1.PeerService,
 	name string, ruleAppliedToSpecs []ACNPAppliedToSpec, action crdv1alpha1.RuleAction) *ClusterNetworkPolicySpecBuilder {
 	var appliedTos []crdv1alpha1.AppliedTo
 	for _, at := range ruleAppliedToSpecs {
@@ -258,6 +258,29 @@ func (b *ClusterNetworkPolicySpecBuilder) AddToServicesRule(svcRefs []crdv1alpha
 		AppliedTo:  appliedTos,
 	}
 	b.Spec.Egress = append(b.Spec.Egress, newRule)
+	return b
+}
+
+func (b *ClusterNetworkPolicySpecBuilder) AddStretchedIngressRule(pSel, nsSel map[string]string,
+	name string, ruleAppliedToSpecs []ACNPAppliedToSpec, action crdv1alpha1.RuleAction) *ClusterNetworkPolicySpecBuilder {
+
+	var appliedTos []crdv1alpha1.AppliedTo
+	for _, at := range ruleAppliedToSpecs {
+		appliedTos = append(appliedTos, b.GetAppliedToPeer(at.PodSelector, at.NSSelector, at.PodSelectorMatchExp, at.NSSelectorMatchExp, at.Group, at.Service))
+	}
+	newRule := crdv1alpha1.Rule{
+		From:      []crdv1alpha1.NetworkPolicyPeer{{Scope: "ClusterSet"}},
+		Action:    &action,
+		Name:      name,
+		AppliedTo: appliedTos,
+	}
+	if len(pSel) > 0 {
+		newRule.From[0].PodSelector = &metav1.LabelSelector{MatchLabels: pSel}
+	}
+	if len(nsSel) > 0 {
+		newRule.From[0].NamespaceSelector = &metav1.LabelSelector{MatchLabels: nsSel}
+	}
+	b.Spec.Ingress = append(b.Spec.Ingress, newRule)
 	return b
 }
 

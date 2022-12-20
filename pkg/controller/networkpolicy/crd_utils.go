@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog/v2"
 
+	"antrea.io/antrea/multicluster/controllers/multicluster/common"
 	"antrea.io/antrea/pkg/apis/controlplane"
 	"antrea.io/antrea/pkg/apis/crd/v1alpha1"
 	crdv1alpha3 "antrea.io/antrea/pkg/apis/crd/v1alpha3"
@@ -189,15 +190,16 @@ func (n *NetworkPolicyController) toAntreaPeerForCRD(peers []v1alpha1.NetworkPol
 		} else if peer.NodeSelector != nil {
 			addressGroup := n.createAddressGroup("", nil, nil, nil, peer.NodeSelector)
 			addressGroups = append(addressGroups, addressGroup)
-		} else if peer.Scope == v1alpha1.ScopeClusterSet {
-			clusterSetScopeSelectors = append(clusterSetScopeSelectors, antreatypes.NewGroupSelector(np.GetNamespace(), peer.PodSelector, peer.NamespaceSelector, nil, nil))
 		} else {
 			addressGroup := n.createAddressGroup(np.GetNamespace(), peer.PodSelector, peer.NamespaceSelector, peer.ExternalEntitySelector, nil)
 			addressGroups = append(addressGroups, addressGroup)
 		}
+		if peer.Scope == v1alpha1.ScopeClusterSet {
+			clusterSetScopeSelectors = append(clusterSetScopeSelectors, antreatypes.NewGroupSelector(np.GetNamespace(), peer.PodSelector, peer.NamespaceSelector, nil, nil))
+		}
 	}
 	var labelIdentities []uint32
-	if n.multiclusterEnabled {
+	if n.stretchNPEnabled {
 		labelIdentities = n.labelIdentityInterface.SetPolicySelectors(clusterSetScopeSelectors, internalNetworkPolicyKeyFunc(np))
 	}
 	return &controlplane.NetworkPolicyPeer{AddressGroups: getAddressGroupNames(addressGroups), IPBlocks: ipBlocks, FQDNs: fqdns, LabelIdentities: labelIdentities}, addressGroups
@@ -215,20 +217,27 @@ func (n *NetworkPolicyController) toNamespacedPeerForCRD(peers []v1alpha1.Networ
 	return &controlplane.NetworkPolicyPeer{AddressGroups: getAddressGroupNames(addressGroups)}, addressGroups
 }
 
-// svcRefToPeerForCRD creates an Antrea controlplane NetworkPolicyPeer from
-// ServiceReference in ToServices field. For ANP, we will use the
-// defaultNamespace(policy Namespace) as the Namespace of ServiceReference that
-// doesn't set Namespace.
-func (n *NetworkPolicyController) svcRefToPeerForCRD(svcRefs []v1alpha1.NamespacedName, defaultNamespace string) *controlplane.NetworkPolicyPeer {
+// svcRefToPeerForCRD creates an Antrea controlplane NetworkPolicyPeer from ServiceReferences in ToServices
+// or ToMulticlusterServices field of a crdv1alpha1 NetworkPolicyPeer. For ANP NetworkPolicyPeers, if
+// Namespace is not provided in the ServiceReference, the policy's Namespace will be assumed.
+func (n *NetworkPolicyController) svcRefToPeerForCRD(svcRefs []v1alpha1.PeerService, defaultNamespace string) *controlplane.NetworkPolicyPeer {
 	var controlplaneSvcRefs []controlplane.ServiceReference
 	for _, svcRef := range svcRefs {
-		curNS := defaultNamespace
+		svcNS, svcName := defaultNamespace, svcRef.Name
 		if svcRef.Namespace != "" {
-			curNS = svcRef.Namespace
+			svcNS = svcRef.Namespace
+		}
+		if svcRef.Scope == v1alpha1.ScopeClusterSet {
+			if n.stretchNPEnabled {
+				svcName = common.ToMCResourceName(svcName)
+			} else {
+				klog.Error("Unable to process ClusterSet scoped service reference when stretched networkpolicy is not enabled")
+				continue
+			}
 		}
 		controlplaneSvcRefs = append(controlplaneSvcRefs, controlplane.ServiceReference{
-			Namespace: curNS,
-			Name:      svcRef.Name,
+			Namespace: svcNS,
+			Name:      svcName,
 		})
 	}
 	return &controlplane.NetworkPolicyPeer{ToServices: controlplaneSvcRefs}
