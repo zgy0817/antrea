@@ -357,9 +357,9 @@ if [[ "$RUN_ALL" == true || "$RUN_SETUP_ONLY" == true ]]; then
     run_conformance
 fi
 
-if [[ "$RUN_ALL" == true || "$RUN_CLEANUP_ONLY" == true ]]; then
-    cleanup_cluster
-fi
+#if [[ "$RUN_ALL" == true || "$RUN_CLEANUP_ONLY" == true ]]; then
+    #cleanup_cluster
+#fi
 
 if [[ "$RUN_CLEANUP_ONLY" == false && $TEST_SCRIPT_RC -ne 0 ]]; then
     exit 1
