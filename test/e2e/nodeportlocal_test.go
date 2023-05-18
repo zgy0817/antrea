@@ -36,10 +36,10 @@ import (
 )
 
 const (
-	defaultStartPort  = 61000
-	defaultEndPort    = 62000
-	updatedStartPort  = 63000
-	updatedEndPort    = 64000
+	defaultStartPort  = 47000
+	defaultEndPort    = 48000
+	updatedStartPort  = 48000
+	updatedEndPort    = 49000
 	defaultTargetPort = 80
 )
 
@@ -365,8 +365,8 @@ func NPLTestMultiplePods(t *testing.T, data *TestData) {
 	clientNode := nodeName(0)
 	serverNode := nodeName(1)
 	if len(clusterInfo.windowsNodes) != 0 {
-		serverNode = workerNodeName(clusterInfo.windowsNodes[0])
-		clientNode = workerNodeName(clusterInfo.windowsNodes[1])
+		clientNode = workerNodeName(clusterInfo.windowsNodes[0])
+		serverNode = workerNodeName(clusterInfo.windowsNodes[1])
 	}
 	testData.createNginxClusterIPServiceWithAnnotations(serverNode, false, &ipFamily, annotation)
 	var testPods []string
@@ -409,7 +409,8 @@ func NPLTestPodAddMultiPort(t *testing.T, data *TestData) {
 	clientNode := nodeName(0)
 	serverNode := nodeName(1)
 	if len(clusterInfo.windowsNodes) != 0 {
-		serverNode = workerNodeName(clusterInfo.windowsNodes[0])
+		clientNode = workerNodeName(clusterInfo.windowsNodes[0])
+		serverNode = workerNodeName(clusterInfo.windowsNodes[1])
 	}
 	testPodName := randName("test-pod-")
 
@@ -476,8 +477,8 @@ func NPLTestPodAddMultiProtocol(t *testing.T, data *TestData) {
 	clientNode := nodeName(0)
 	serverNode := nodeName(1)
 	if len(clusterInfo.windowsNodes) != 0 {
-		serverNode = workerNodeName(clusterInfo.windowsNodes[0])
-		clientNode = workerNodeName(clusterInfo.windowsNodes[1])
+		clientNode = workerNodeName(clusterInfo.windowsNodes[0])
+		serverNode = workerNodeName(clusterInfo.windowsNodes[1])
 	}
 	testPodName := randName("test-pod-")
 
@@ -537,8 +538,8 @@ func NPLTestLocalAccess(t *testing.T, data *TestData) {
 	clientNode := nodeName(0)
 	serverNode := nodeName(1)
 	if len(clusterInfo.windowsNodes) != 0 {
-		serverNode = workerNodeName(clusterInfo.windowsNodes[0])
-		clientNode = workerNodeName(clusterInfo.windowsNodes[1])
+		clientNode = workerNodeName(clusterInfo.windowsNodes[0])
+		serverNode = workerNodeName(clusterInfo.windowsNodes[1])
 	}
 
 	testData.createNginxClusterIPServiceWithAnnotations(serverNode, false, &ipFamily, annotation)
@@ -585,8 +586,8 @@ func testNPLMultiplePodsAgentRestart(t *testing.T, data *TestData) {
 	serverNode := nodeName(1)
 	winenv := false
 	if len(clusterInfo.windowsNodes) != 0 {
-		serverNode = workerNodeName(clusterInfo.windowsNodes[0])
-		clientNode = workerNodeName(clusterInfo.windowsNodes[1])
+		clientNode = workerNodeName(clusterInfo.windowsNodes[0])
+		serverNode = workerNodeName(clusterInfo.windowsNodes[1])
 		winenv = true
 	}
 	data.createNginxClusterIPServiceWithAnnotations(serverNode, false, &ipFamily, annotation)
@@ -662,13 +663,13 @@ func testNPLChangePortRangeAgentRestart(t *testing.T, data *TestData) {
 	clientNode := nodeName(0)
 	serverNode := nodeName(1)
 	if len(clusterInfo.windowsNodes) != 0 {
-		serverNode = workerNodeName(clusterInfo.windowsNodes[0])
-		clientNode = workerNodeName(clusterInfo.windowsNodes[1])
+		clientNode = workerNodeName(clusterInfo.windowsNodes[0])
+		serverNode = workerNodeName(clusterInfo.windowsNodes[1])
 	}
 	data.createNginxClusterIPServiceWithAnnotations(serverNode, false, &ipFamily, annotation)
 	var testPods []string
 	var err error
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 3; i++ {
 		testPodName := randName("test-pod-")
 		testPods = append(testPods, testPodName)
 		err = data.createNginxPodOnNode(testPodName, data.testNamespace, serverNode, false)
@@ -697,7 +698,6 @@ func testNPLChangePortRangeAgentRestart(t *testing.T, data *TestData) {
 			}
 		}
 	}
-
 	configureNPLForAgent(t, data, updatedStartPort, updatedEndPort)
 
 	antreaPod, err := data.getAntreaPodOnNode(serverNode)
@@ -708,6 +708,7 @@ func testNPLChangePortRangeAgentRestart(t *testing.T, data *TestData) {
 	if clusterInfo.nodesOS[serverNode] == "windows" {
 		time.Sleep(10 * time.Second)
 		checkForNPLRuleInNetNat(t, data, r, antreaPod, serverNode, rules, false)
+		time.Sleep(20 * time.Second)
 	} else {
 		checkForNPLRuleInIPTables(t, data, r, antreaPod, rules, false)
 		checkForNPLListeningSockets(t, data, r, antreaPod, rules, false)

@@ -430,10 +430,11 @@ func (c *NPLController) handleAddUpdatePod(key string, obj interface{}) error {
 		klog.Infof("IP address not set for Pod: %s", key)
 		return nil
 	}
+	klog.V(2).Infof("Pod IP: %s", pod.Status.PodIP)
 	c.addPodIPToCache(key, podIP)
 
 	targetPortsInt, targetPortsStr := c.getTargetPortsForServicesOfPod(obj)
-	klog.V(2).Infof("Pod %s is selected by a Service for which NodePortLocal is enabled", key)
+	klog.V(2).Infof("Pod %s is selected by a Service for which NodePortLocal is enabled %s %s", key, targetPortsInt, targetPortsStr)
 
 	var nodePort int
 	podPorts := make(map[string]struct{})
@@ -502,6 +503,7 @@ func (c *NPLController) handleAddUpdatePod(key string, obj interface{}) error {
 			if hport, ok := hostPorts[targetPortProto]; ok {
 				nodePort = hport
 			} else {
+				klog.V(2).Infof("PodIP %s, NodePort %d, Protocol %s", podIP, port, protocol)
 				nodePort, err = c.portTable.AddRule(podIP, port, protocol)
 				if err != nil {
 					return fmt.Errorf("failed to add rule for Pod %s: %v", key, err)
@@ -510,7 +512,7 @@ func (c *NPLController) handleAddUpdatePod(key string, obj interface{}) error {
 		} else {
 			nodePort = portData.NodePort
 		}
-
+		klog.V(2).Infof("PodPort %d, NodeIP %s, NodePort %d, Protocol %s", port, pod.Status.HostIP, nodePort, protocol)
 		if _, ok := nplAnnotationsRequiredMap[portcache.NodePortProtoFormat(nodePort, protocol)]; !ok {
 			nplAnnotationsRequiredMap[portcache.NodePortProtoFormat(nodePort, protocol)] = types.NPLAnnotation{
 				PodPort:   port,

@@ -41,7 +41,7 @@ func (c *NPLController) updatePodNPLAnnotation(pod *corev1.Pod, annotations []np
 	if err := patchPod(annotations, pod, c.kubeClient); err != nil {
 		klog.Warningf("Unable to patch NodePortLocal annotation for Pod %s/%s: %v", pod.Namespace, pod.Name, err)
 	}
-	klog.V(2).Infof("Successfully updated NodePortLocal annotation for Pod %s/%s", pod.Namespace, pod.Name)
+	klog.V(2).Infof("Successfully updated NodePortLocal annotation for Pod %s/%s/%s", pod.Namespace, pod.Name, annotations)
 	return nil
 }
 

@@ -27,7 +27,7 @@ func RunCommand(cmd string) (string, error) {
 	// https://stackoverflow.com/questions/19282870/how-can-i-use-try-catch-and-get-my-script-to-stop-if-theres-an-error/19285405
 	psCmd := exec.Command("powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
 		fmt.Sprintf(`$ErrorActionPreference="Stop";try {%s} catch {Write-Host $_;os.Exit(1)}`, cmd)) // #nosec G204
-	stdout, err := psCmd.Output()
+	stdout, err := psCmd.CombinedOutput()
 	stdoutStr := string(stdout)
 	if err != nil {
 		return "", fmt.Errorf("failed to run command '%s': output '%s', %v", cmd, stdoutStr, err)

@@ -785,6 +785,25 @@ func AddNetNatStaticMapping(mapping *NetNatStaticMapping) error {
 	cmd := fmt.Sprintf("Add-NetNatStaticMapping -NatName %s -ExternalIPAddress %s -ExternalPort %d -InternalIPAddress %s -InternalPort %d -Protocol %s",
 		mapping.Name, mapping.ExternalIP, mapping.ExternalPort, mapping.InternalIP, mapping.InternalPort, mapping.Protocol)
 	_, err := runCommand(cmd)
+	if err != nil {
+		staticMappingStr, err := GetNetNatStaticMapping(mapping)
+		cmd := fmt.Sprintf("netstat -ano")
+		portStr, err := runCommand(cmd)
+		cmd = fmt.Sprintf("get-process")
+		processStr, err := runCommand(cmd)
+		cmd = fmt.Sprintf("get-netnatstaticmapping")
+		allmappingStr, err := runCommand(cmd)
+		klog.ErrorS(err, "netnatstaticmapping", "mapping", staticMappingStr, "allmapping", allmappingStr, "port status", portStr, "process", processStr)
+	} else {
+		staticMappingStr, _ := GetNetNatStaticMapping(mapping)
+		cmd := fmt.Sprintf("netstat -ano")
+		portStr, _ := runCommand(cmd)
+		cmd = fmt.Sprintf("get-process")
+		processStr, _ := runCommand(cmd)
+		cmd = fmt.Sprintf("get-netnatstaticmapping")
+		allmappingStr, _ := runCommand(cmd)
+		klog.V(2).InfoS("print log", "netnatstaticmapping", staticMappingStr, "allmapping", allmappingStr, "port status", portStr, "process", processStr)
+	}
 	return err
 }
 
