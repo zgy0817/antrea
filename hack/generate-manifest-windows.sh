@@ -25,6 +25,8 @@ Generate a YAML manifest to run Antrea on Windows Nodes, using Kustomize, and pr
         --mode (dev|release)  Choose the configuration variant that you need (default is 'dev')
         --keep                Debug flag which will preserve the generated kustomization.yml
         --help, -h            Print this message and exit
+        --containerd          Support for containerd runtime. 
+        --ovs-containerd      Support for containerd runtime with Windows OVS processes inside container.
 
 In 'release' mode, environment variables IMG_NAME and IMG_TAG must be set.
 
@@ -60,6 +62,10 @@ case $key in
     ;;
     --containerd)
     RUNTIME="containerd"
+    shift
+    ;;
+    --ovs-containerd)
+    RUNTIME="ovs-containerd"
     shift
     ;;
     -h|--help)
@@ -112,6 +118,8 @@ pushd $TMP_DIR > /dev/null
 BASE=../../default
 if [ "$RUNTIME" == "containerd" ]; then
     BASE=../../containerd
+elif [ "$RUNTIME" == "ovs-containerd" ]; then
+    BASE=../../ovs-containerd
 fi
 
 mkdir $MODE && cd $MODE

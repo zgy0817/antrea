@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- agent-containerd.yml
+- ovs-containerd.yml
 - ../base
 - ../base-containerd
 namespace: kube-system
@@ -9,6 +9,7 @@ commonLabels:
   app: antrea
 configMapGenerator:
 - files:
-  - conf/Run-AntreaAgent-Containerd.ps1
+  - conf/Run-AntreaOVS-Containerd.ps1
+  - conf/Run-AntreaAgent-OVS-Containerd.ps1
   name: antrea-agent-windows
   behavior: merge

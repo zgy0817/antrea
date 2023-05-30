@@ -28,10 +28,14 @@ $OVS_BR_ADAPTER = "br-int"
 $AntreaHnsNetworkName = "antrea-hnsnetwork"
 
 function RemoveOVSService() {
-    stop-service ovs-vswitchd
-    sc.exe delete ovs-vswitchd
-    stop-service ovsdb-server
-    sc.exe delete ovsdb-server
+    if (Get-Service ovs-vswitchd -ErrorAction SilentlyContinue) {
+        stop-service ovs-vswitchd
+        sc.exe delete ovs-vswitchd
+    }
+    if (Get-Service ovsdb-server -ErrorAction SilentlyContinue) {
+        stop-service ovsdb-server
+        sc.exe delete ovsdb-server
+    }
 }
 
 function ResetOVSService() {

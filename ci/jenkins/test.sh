@@ -252,8 +252,10 @@ function collect_windows_network_info_and_logs {
 
 function wait_for_antrea_windows_pods_ready {
     kubectl apply -f "${WORKDIR}/antrea.yml"
-    if [[ "${PROXY_ALL}" == false ]]; then
-        kubectl apply -f "${WORKDIR}/kube-proxy-${WINDOWS_YAML_SUFFIX}.yml"
+    if [[ "${PROXY_ALL}" == false && ${TESTCASE} =~ "windows-e2e" ]]; then
+        #kubectl apply -f "${WORKDIR}/kube-proxy-${WINDOWS_YAML_SUFFIX}.yml"
+        kubectl apply -f "${WORKDIR}/kube-proxy-windows-containerd.yml"
+        kubectl rollout status daemonset/kube-proxy-windows -n kube-system
     fi
     kubectl apply -f "${WORKDIR}/antrea-${WINDOWS_YAML_SUFFIX}.yml"
     kubectl rollout restart deployment/coredns -n kube-system
@@ -261,9 +263,6 @@ function wait_for_antrea_windows_pods_ready {
     kubectl rollout status deployment.apps/antrea-controller -n kube-system
     kubectl rollout status daemonset/antrea-agent -n kube-system
     kubectl rollout status daemonset.apps/antrea-agent-windows -n kube-system
-    if [[ "${PROXY_ALL}" == false ]]; then
-        kubectl rollout status daemonset/kube-proxy-windows -n kube-system
-    fi
     kubectl get nodes -o wide --no-headers=true | awk -v role="$CONTROL_PLANE_NODE_ROLE" '$3 !~ role && $1 ~ /win/ {print $6}' | while read IP; do
         for i in `seq 5`; do
             sleep 5
@@ -321,8 +320,9 @@ function prepare_env {
 
 function revert_snapshot_windows {
     WIN_NAME=$1
-    echo "==== Reverting Windows VM ${WIN_NAME} ====="
-    govc snapshot.revert -vm ${WIN_NAME} win-initial
+    SNAPSHOT_NAME=$2
+    echo "==== Reverting Windows VM ${WIN_NAME} to ${SNAPSHOT_NAME} ====="
+    govc snapshot.revert -vm ${WIN_NAME} ${SNAPSHOT_NAME}
     # If Windows VM fails to power on correctly in time, retry several times.
     winVMIPs=""
     for i in `seq 10`; do
@@ -372,7 +372,9 @@ function deliver_antrea_windows {
     # Enable verbose log for troubleshooting.
     sed -i "s/--v=0/--v=4/g" build/yamls/antrea.yml build/yamls/antrea-windows.yml
 
-    if [[ "${PROXY_ALL}" == true ]]; then
+    if [[ "${PROXY_ALL}" == false && ${TESTCASE} =~ "windows-e2e" ]]; then
+        sed -i "s|.*proxyAll: true|      proxyAll: false|g" build/yamls/antrea.yml build/yamls/antrea-windows.yml
+    else
         echo "====== Updating yaml files to enable proxyAll ======"
         KUBERNETES_SVC_EP_IP=$(kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].addresses[0].ip}')
         KUBERNETES_SVC_EP_PORT=$(kubectl get endpoints kubernetes -o jsonpath='{.subsets[0].ports[0].port}')
@@ -410,7 +412,7 @@ function deliver_antrea_windows {
     rm -f antrea-windows.tar.gz
     sed -i 's/if (!(Test-Path $AntreaAgentConfigPath))/if ($true)/' hack/windows/Helper.psm1
     kubectl get nodes -o wide --no-headers=true | awk -v role="$CONTROL_PLANE_NODE_ROLE" '$3 !~ role && $1 ~ /win/ {print $1}' | while read WORKER_NAME; do
-        revert_snapshot_windows ${WORKER_NAME}
+        revert_snapshot_windows ${WORKER_NAME} win-initial
 
         # Use a script to run antrea agent in windows Network Policy cases
         if [ "$TESTCASE" == "windows-networkpolicy-process" ]; then
@@ -473,6 +475,7 @@ function deliver_antrea_windows_containerd {
     echo "====== Cleanup Antrea Installation Before Delivering Antrea Windows Containerd ======"
     clean_antrea
     kubectl delete -f ${WORKDIR}/antrea-windows-containerd.yml --ignore-not-found=true || true
+    kubectl delete -f ${WORKDIR}/antrea-windows-ovs-containerd.yml --ignore-not-found=true || true
     kubectl delete -f ${WORKDIR}/kube-proxy-windows-containerd.yml --ignore-not-found=true || true
     kubectl delete daemonset antrea-agent -n kube-system --ignore-not-found=true || true
     kubectl delete -f ${WORKDIR}/antrea.yml --ignore-not-found=true || true
@@ -492,6 +495,10 @@ function deliver_antrea_windows_containerd {
 
     # Enable verbose log for troubleshooting.
     sed -i "s/--v=0/--v=4/g" build/yamls/antrea.yml build/yamls/antrea-windows-containerd.yml
+
+    echo "====== Updating yaml files to enable proxyAll ======"
+    KUBE_API_SERVER=$(kubectl --kubeconfig=$KubeConfigFile config view -o jsonpath='{.clusters[0].cluster.server}')
+    sed -i "s|.*kubeAPIServerOverride: \"\"|    kubeAPIServerOverride: \"${KUBE_API_SERVER}\"|g" build/yamls/antrea.yml build/yamls/antrea-windows-containerd.yml build/yamls/antrea-windows-ovs-containerd.yml
 
     cp -f build/yamls/*.yml $WORKDIR
     docker save -o antrea-ubuntu.tar antrea/antrea-ubuntu:latest
@@ -527,8 +534,7 @@ function deliver_antrea_windows_containerd {
     done
 
     echo "===== Build Antrea Windows on Windows Jumper Node ====="
-    echo "==== Reverting Windows VM ${WIN_IMAGE_NODE} ====="
-    revert_snapshot_windows ${WIN_IMAGE_NODE}
+    revert_snapshot_windows ${WIN_IMAGE_NODE} win-initial
     rm -f antrea-windows.tar.gz
     # Compress antrea repo and copy it to a Windows node
     mkdir -p jenkins
@@ -545,7 +551,7 @@ function deliver_antrea_windows_containerd {
     echo "===== Deliver Antrea Windows to Windows worker nodes and pull necessary images on Windows worker nodes ====="
     sed -i 's/if (!(Test-Path $AntreaAgentConfigPath))/if ($true)/' hack/windows/Helper.psm1
     kubectl get nodes -o wide --no-headers=true | awk -v role="$CONTROL_PLANE_NODE_ROLE" '$3 !~ role && $1 ~ /win/ {print $1}' | while read WORKER_NAME; do
-        revert_snapshot_windows ${WORKER_NAME}
+        revert_snapshot_windows ${WORKER_NAME} win-initial-userspaceovs
         # Some tests need us.gcr.io/k8s-artifacts-prod/e2e-test-images/agnhost:2.13 image but it is not for windows/amd64 10.0.17763
         # Use e2eteam/agnhost:2.13 instead
         harbor_images=("sigwindowstools-kube-proxy:v1.18.0" "agnhost:2.13" "agnhost:2.13" "agnhost:2.29" "e2eteam-jessie-dnsutils:1.0" "e2eteam-pause:3.2")
@@ -1080,7 +1086,8 @@ fi
 trap clean_antrea EXIT
 if [[ ${TESTCASE} =~ "windows" ]]; then
     if [[ ${TESTCASE} =~ "containerd" ]]; then
-        WINDOWS_YAML_SUFFIX="windows-containerd"
+        # WINDOWS_YAML_SUFFIX="windows-containerd"
+        WINDOWS_YAML_SUFFIX="windows-ovs-containerd"
         deliver_antrea_windows_containerd
         if [[ ${TESTCASE} =~ "e2e" ]]; then
             run_e2e_windows

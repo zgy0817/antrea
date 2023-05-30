@@ -23,9 +23,10 @@ The following components should be configured and run on the Windows Node.
 
 antrea-agent and kube-proxy run as processes on host and are managed by
 management Pods. It is recommended to run OVS daemons as Windows services.
-If you don't want to run antrea-agent and kube-proxy from the management Pods
-Antrea also provides scripts which help install and run these two components
-directly without Pod, please see [Manually run kube-proxy and antrea-agent on Windows worker Nodes](#Manually-run-kube-proxy-and-antrea-agent-on-Windows-worker-Nodes)
+We also support running OVS processes inside container. If you don't want to
+run antrea-agent and kube-proxy from the management Pods Antrea also provides
+scripts which help to install and run these two components directly without Pod,
+please see [Manually run kube-proxy and antrea-agent on Windows worker Nodes](#Manually-run-kube-proxy-and-antrea-agent-on-Windows-worker-Nodes)
 section for details.
 
 ### Antrea Windows demo
@@ -264,6 +265,13 @@ Download and apply `antrea-windows-containerd.yml`.
 kubectl apply -f https://github.com/antrea-io/antrea/releases/download/<TAG>/antrea-windows-containerd.yml
 ```
 
+Since Antrea 1.13, you can deploy both antrea-agent Windows and antrea-ovs Windows DaemonSet with Containerd runtime by
+applying file `antrea-windows-ovs-containerd.yml`.
+
+```bash
+kubectl apply -f https://github.com/antrea-io/antrea/releases/download/<TAG>/antrea-windows-ovs-containerd.yml
+```
+
 #### Join Windows worker Nodes
 
 #### 1. (Optional) Install OVS (provided by Antrea or your own)
@@ -300,6 +308,14 @@ Verify the OVS services are installed.
 ```powershell
 get-service ovsdb-server
 get-service ovs-vswitchd
+```
+
+If you want to containerize OVS for containerd runtime, OVS userspace processes
+are not run on the host and hence you can set the `InstallUserspace` parameter
+to false.
+
+```powershell
+.\Install-OVS.ps1 -InstallUserspace $false
 ```
 
 #### 2. Disable Windows Firewall
