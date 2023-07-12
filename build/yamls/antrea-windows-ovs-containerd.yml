@@ -53,6 +53,19 @@ data:
         }
         Start-Sleep -Seconds $SleepInterval
     }
+  PostStart-AntreaAgent-Containerd.ps1: |
+    $networkName = "antrea-hnsnetwork"
+    $networks = Get-HnsNetwork
+    $networkExists = $false
+    foreach ($network in $networks) {
+    if ($network.Name -eq $networkName) {
+        $networkExists = $true
+        break
+      }
+    }
+    if ($networkExists) {
+      Enable-VMSwitchExtension -Name "Open vSwitch Extension" -VMSwitchName "antrea-hnsnetwork"
+    }
 kind: ConfigMap
 metadata:
   labels:
@@ -269,6 +282,13 @@ spec:
               fieldPath: spec.nodeName
         image: antrea/antrea-windows:latest
         imagePullPolicy: IfNotPresent
+        lifecycle:
+          preStop:
+            exec:
+              command: ["powershell", "Disable-VMSwitchExtension -Name 'Open vSwitch Extension' -VMSwitchName antrea-hnsnetwork"]
+          postStart:
+            exec:
+              command: ["powershell", "-file", "$env:CONTAINER_SANDBOX_MOUNT_POINT/var/lib/antrea-windows/PostStart-AntreaAgent-Containerd"]
         name: antrea-agent
         volumeMounts:
         - mountPath: /etc/antrea
