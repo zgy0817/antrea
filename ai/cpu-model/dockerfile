@@ -1,0 +1,13 @@
+FROM python:3.9
+
+WORKDIR /app
+
+COPY . .
+
+RUN python3.9 -m pip install --pre --upgrade bigdl-llm[all]
+
+RUN python3.9 -m pip install Flask transformers torch
+
+EXPOSE 5000
+
+CMD ["python3.9", "app.py"]
