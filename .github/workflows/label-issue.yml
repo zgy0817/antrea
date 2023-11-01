@@ -1,0 +1,20 @@
+name: Auto Label New Issues
+
+on:
+  issues:
+    types:
+      - opened
+
+jobs:
+  label_new_issue:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Add 'test' label to new issue
+      run: |
+        ISSUE_NUMBER=$(jq -r ".issue.number" "$GITHUB_EVENT_PATH")
+        echo "Adding 'test' label to issue $ISSUE_NUMBER"
+        curl -X POST -u ${{ secrets.GITHUB_TOKEN }} -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/labels" -d '["test"]'
