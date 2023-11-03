@@ -51,7 +51,8 @@ func newLeaderCommand() *cobra.Command {
 
 func runLeader(o *Options) error {
 	// on the leader we want the reconciler to run for a given Namespace instead of cluster scope
-	o.options.Namespace = env.GetPodNamespace()
+	podNamespace := env.GetPodNamespace()
+	o.options.Namespace = podNamespace
 	stopCh := signals.RegisterSignalHandlers()
 
 	mgr, err := setupManagerAndCertControllerFunc(true, o)
@@ -59,13 +60,15 @@ func runLeader(o *Options) error {
 		return err
 	}
 
+	mgrClient := mgr.GetClient()
+	mgrScheme := mgr.GetScheme()
 	memberClusterStatusManager := leader.NewMemberClusterAnnounceReconciler(
-		mgr.GetClient(), mgr.GetScheme())
+		mgrClient, mgrScheme)
 	if err = memberClusterStatusManager.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("error creating MemberClusterAnnounce controller: %v", err)
 	}
 
-	noCachedClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
+	noCachedClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgrScheme, Mapper: mgr.GetRESTMapper()})
 	if err != nil {
 		return err
 	}
@@ -73,7 +76,7 @@ func runLeader(o *Options) error {
 	hookServer.Register("/validate-multicluster-crd-antrea-io-v1alpha1-memberclusterannounce",
 		&webhook.Admission{Handler: &memberClusterAnnounceValidator{
 			Client:    noCachedClient,
-			namespace: env.GetPodNamespace()}})
+			namespace: podNamespace}})
 
 	hookServer.Register("/validate-multicluster-crd-antrea-io-v1alpha2-clusterset",
 		&webhook.Admission{Handler: &clusterSetValidator{
@@ -82,27 +85,23 @@ func runLeader(o *Options) error {
 			role:      leaderRole},
 		})
 
-	clusterSetReconciler := &leader.LeaderClusterSetReconciler{
-		Client:                   mgr.GetClient(),
-		Scheme:                   mgr.GetScheme(),
-		StatusManager:            memberClusterStatusManager,
-		ClusterCalimCRDAvailable: o.ClusterCalimCRDAvailable,
-	}
-	if err = clusterSetReconciler.SetupWithManager(mgr); err != nil {
+	clusterSetReconciler := leader.NewLeaderClusterSetReconciler(mgrClient, podNamespace,
+		o.ClusterCalimCRDAvailable, memberClusterStatusManager)
+	if err := clusterSetReconciler.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("error creating ClusterSet controller: %v", err)
 	}
 
 	resExportReconciler := &leader.ResourceExportReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme()}
+		Client: mgrClient,
+		Scheme: mgrScheme}
 	if err = resExportReconciler.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("error creating ResourceExport controller: %v", err)
 	}
 	if o.EnableStretchedNetworkPolicy {
 		labelExportReconciler := leader.NewLabelIdentityExportReconciler(
-			mgr.GetClient(),
-			mgr.GetScheme(),
-			env.GetPodNamespace())
+			mgrClient,
+			mgrScheme,
+			podNamespace)
 		if err = labelExportReconciler.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("error creating LabelIdentityExport controller: %v", err)
 		}
