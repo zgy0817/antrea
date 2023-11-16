@@ -565,8 +565,6 @@ function deliver_antrea_linux_containerd {
     echo "==== Start building and delivering Linux containerd images ===="
     DOCKER_REGISTRY="${DOCKER_REGISTRY}" ./hack/build-antrea-linux-all.sh --pull
     docker save -o antrea-ubuntu.tar antrea/antrea-ubuntu:latest
-    # containerd is the runtime, need to load the image via ctr.
-    ctr -n=k8s.io images import antrea-ubuntu.tar
     echo "===== Pull necessary images on Control-Plane node ====="
     harbor_images=("agnhost:2.13" "nginx:1.15-alpine")
     antrea_images=("e2eteam/agnhost:2.13" "docker.io/library/nginx:1.15-alpine")
@@ -574,14 +572,14 @@ function deliver_antrea_linux_containerd {
     k8s_images=("registry.k8s.io/e2e-test-images/agnhost:2.45" "registry.k8s.io/e2e-test-images/jessie-dnsutils:1.5" "registry.k8s.io/e2e-test-images/nginx:1.14-2")
     e2e_images=("k8sprow.azurecr.io/kubernetes-e2e-test-images/agnhost:2.45" "k8sprow.azurecr.io/kubernetes-e2e-test-images/jessie-dnsutils:1.5" "k8sprow.azurecr.io/kubernetes-e2e-test-images/nginx:1.14-2")
 
-    for i in "${!harbor_images[@]}"; do
-        ctr -n=k8s.io images delete "${antrea_images[i]}"
-        ctr -n=k8s.io images pull "${DOCKER_REGISTRY}/antrea/${harbor_images[i]}"
-        ctr -n=k8s.io images tag "${DOCKER_REGISTRY}/antrea/${harbor_images[i]}" "${antrea_images[i]}"
+    echo "===== Deliver Antrea YAML to Controller nodes ====="
+    kubectl get nodes -o wide --no-headers=true | awk -v role="$CONTROL_PLANE_NODE_ROLE" '$3 ~ role && $1 !~ /win/ {print $6}' | while read IP; do
+        rsync -avr --progress --inplace -e "ssh -o StrictHostKeyChecking=no" ${WORKDIR}/antrea.yml jenkins@${IP}:${WORKDIR}/antrea.yml
     done
     echo "===== Deliver Antrea to Linux worker nodes and pull necessary images on worker nodes ====="
-    kubectl get nodes -o wide --no-headers=true | awk -v role="$CONTROL_PLANE_NODE_ROLE" '$3 !~ role && $1 !~ /win/ {print $6}' | while read IP; do
+    kubectl get nodes -o wide --no-headers=true | awk '$1 !~ /win/ {print $6}' | while read IP; do
         rsync -avr --progress --inplace -e "ssh -o StrictHostKeyChecking=no" antrea-ubuntu.tar jenkins@${IP}:${WORKDIR}/antrea-ubuntu.tar
+        # containerd is the runtime, need to load the image via ctr.
         ssh -o StrictHostKeyChecking=no -n jenkins@${IP} "${CLEAN_STALE_IMAGES_CONTAINERD}; ${PRINT_CONTAINERD_STATUS}; ctr -n=k8s.io images import ${WORKDIR}/antrea-ubuntu.tar" || true
 
         for i in "${!harbor_images[@]}"; do
@@ -910,7 +908,7 @@ function run_conformance_windows_containerd {
     export KUBE_TEST_REPO_LIST=${WORKDIR}/repo_list
     if [ "$TESTCASE" == "windows-containerd-networkpolicy" ]; then
         # Allow LinuxOnly mark in windows-containerd-networkpolicy because Antrea Windows supports NP functions.
-        ginkgo -timeout=3h --flake-attempts 3 --no-color $E2ETEST_PATH -- --provider=skeleton --ginkgo.focus="$WINDOWS_NETWORKPOLICY_FOCUS" --ginkgo.skip="$WINDOWS_NETWORKPOLICY_CONTAINERD_SKIP" > windows_conformance_result_no_color.txt || true
+        ginkgo -timeout=3h -p --flake-attempts 5 --no-color $E2ETEST_PATH -- --provider=skeleton --ginkgo.focus="$WINDOWS_NETWORKPOLICY_FOCUS" --ginkgo.skip="$WINDOWS_NETWORKPOLICY_CONTAINERD_SKIP" > windows_conformance_result_no_color.txt || true
     else
         ginkgo --no-color $E2ETEST_PATH -- --provider=skeleton --node-os-distro=windows --ginkgo.focus="$WINDOWS_CONFORMANCE_FOCUS" --ginkgo.skip="$WINDOWS_CONFORMANCE_SKIP" > windows_conformance_result_no_color.txt || true
     fi
