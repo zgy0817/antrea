@@ -1,0 +1,37 @@
+name: LangChain Label Processor
+
+on:
+  issues:
+    types: [opened, reopened]
+
+jobs:
+  process-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: |
+          pip install langchain openai
+      - name: Run process.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          LABEL_OUTPUT=CI,Jenkins 
+          echo "LABEL_OUTPUT=$LABEL_OUTPUT" >> $GITHUB_ENV
+      - name: comment result
+        uses: actions/github-script@v5
+        with:
+          script: |
+            const labelsToAdd = '${{ env.LABEL_OUTPUT }}'.replace(/'/g, '').split(',');
+            github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: labelsToAdd,
+            });

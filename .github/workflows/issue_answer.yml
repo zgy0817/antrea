@@ -1,0 +1,39 @@
+name: LangChain Issue Processor
+
+on:
+  issues:
+    types: [opened, reopened]
+
+jobs:
+  process-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: |
+          pip install langchain openai
+          pip install langchain[docarray]
+      - name: Run process.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          SCRIPT_OUTPUT=$(python ai/issue_answer.py --github-token $GITHUB_TOKEN --openai-token $OPENAI_API_KEY --issue-number ${{ github.event.issue.number }})
+          echo "$SCRIPT_OUTPUT"
+          echo "SCRIPT_OUTPUT=$SCRIPT_OUTPUT" >> $GITHUB_ENV
+          echo "${{env.SCRIPT_OUTPUT}}"
+      - name: comment result
+        uses: actions/github-script@v5        
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${{env.SCRIPT_OUTPUT}}`,
+            });
