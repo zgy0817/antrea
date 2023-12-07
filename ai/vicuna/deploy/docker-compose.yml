@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  controller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aichat:latest
+    ports:
+      - "21001:21001"
+    entrypoint: ["python3.9", "-m", "fastchat.serve.controller", "--host", "0.0.0.0", "--port", "21001"]
+  model-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ../model:/model
+    image: aichat:latest
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    entrypoint: ["python3.9", "-m", "fastchat.serve.model_worker", "--model-names", "${MODEL_NAMES}", "--model-path", "${MODEL_PATH}", "--worker-address", "http://model-worker:21002", "--controller-address", "http://controller:21001", "--host", "0.0.0.0", "--port", "21002"]
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aichat:latest
+    ports:
+      - "8000:8000"
+    entrypoint: ["python3.9", "-m", "fastchat.serve.openai_api_server", "--controller-address", "http://controller:21001", "--host", "0.0.0.0", "--port", "8000"]
+
