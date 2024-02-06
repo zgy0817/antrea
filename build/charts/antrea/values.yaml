@@ -234,11 +234,24 @@ agent:
     type: RollingUpdate
   # -- Additional volumes for antrea-agent Pods.
   extraVolumes: []
+  # -- Do not try to load any of the required Kernel modules (e.g., openvswitch)
+  # during initialization of the antrea-agent. Most users should never need to
+  # set this to true, but it may be required with some specific distributions.
+  dontLoadKernelModules: false
   installCNI:
+    # -- Extra environment variables to be injected into install-cni.
+    extraEnv: {}
     # -- Resource requests and limits for the install-cni initContainer.
     resources:
       requests:
         cpu: "100m"
+    securityContext:
+      # -- Run the install-cni container as privileged.
+      privileged: false
+      # -- Capabilities for the install-cni initContainer.
+      capabilities:
+        # Used to load the Wireguard and OVS kernel modules.
+        - SYS_MODULE
   antreaAgent:
     # -- Extra environment variables to be injected into antrea-agent.
     extraEnv: {}
@@ -254,7 +267,16 @@ agent:
     resources:
       requests:
         cpu: "200m"
+    securityContext:
+      # -- Run the antrea-agent container as privileged. Currently we require
+      # this to be true (for sysctl configurations), but we may support running
+      # as non-privileged in the future.
+      privileged: true
+      # -- Capabilities for the antrea-agent container.
+      capabilities: []
   antreaOVS:
+    # -- Extra environment variables to be injected into antrea-ovs.
+    extraEnv: {}
     # -- Max size in MBs of any single log file.
     logFileMaxSize: 100
     # -- Max number of log files.
@@ -265,12 +287,28 @@ agent:
     resources:
       requests:
         cpu: "200m"
+    securityContext:
+      # -- Run the antrea-ovs container as privileged.
+      privileged: false
+      # -- Capabilities for the antrea-ovs container.
+      capabilities:
+        # These are the capabilities required by the OVS daemons.
+        - SYS_NICE
+        - NET_ADMIN
+        - SYS_ADMIN
+        - IPC_LOCK
   antreaIPsec:
     # -- Resource requests and limits for the antrea-ipsec container (when IPsec
     # is enabled).
     resources:
       requests:
         cpu: "50m"
+    securityContext:
+      # -- Run the antrea-ipsec container as privileged.
+      privileged: false
+      # -- Capabilities for the antrea-ipsec container.
+      capabilities:
+        - NET_ADMIN
 
 controller:
   # -- Port for the antrea-controller APIServer to serve on.
@@ -360,10 +398,6 @@ webhooks:
 
 # -- Global log verbosity switch for all Antrea components.
 logVerbosity: 0
-
-whereabouts:
-  # -- Install and configure Whereabouts, for use by the antrea-agent.
-  enable: false
 
 # Configure Multicluster defaults for both Antrea Controller and Agent.
 multicluster:
