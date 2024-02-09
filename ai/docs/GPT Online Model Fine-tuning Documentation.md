@@ -1,4 +1,17 @@
 # GPT Online Model Fine-tuning Documentation
+
+## Table of Contents
+<!-- toc -->
+- [GPT Online Model Fine-tuning Documentation](#gpt-online-model-fine-tuning-documentation)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Steps](#steps)
+    - [1. Prepare formatted data](#1-prepare-formatted-data)
+    - [2. Create a fine-tuning job](#2-create-a-fine-tuning-job)
+    - [3. Use a fine-tuned model](#3-use-a-fine-tuned-model)
+  - [Code Explanation](#code-explanation)
+<!-- /toc -->
+
 ## Introduction
 GPT is a large-language-model that can give response to your questions in natural language, by calculating the representation of your questions with its model parameters. However, for customized scenarios, the original models OpenAI releases may not work very well. If you come across this problem, model fine-tuning may be a good solution. The working principle of fine-tuning is using your data which you want the model to learn, and adjusting the model parameters by back propagation algorithm with your data. It makes AI model following instructions better, as well as formatting output responses.
 
@@ -338,6 +351,4 @@ else:
 
 print(response.choices[0].message.content)
 ```
-
-## FAQ
 

@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ../model:/model
+      - ../dataset:/dataset
+      - ../playground:/playground
+    image: aichat:latest
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${GPU_NUM}
+              capabilities: [gpu]
+    entrypoint: ["deepspeed", "/usr/local/lib/python3.9/dist-packages/fastchat/train/train_lora.py", "--model_name_or_path","${MODEL_PATH}", "--lora_r", "${LORA_R}", "--lora_alpha", "16", "--lora_dropout", "0.05", "--data_path","${DATA_PATH}", "--bf16", "True", "--output_dir", "${MODEL_OUTPUT}", "--num_train_epochs", "${NUM_TRAIN_EPOCHS}", "--per_device_train_batch_size", "${PER_DEVICE_TRAIN_BATCH_SIZE}", "--per_device_eval_batch_size", "${PER_DEVICE_EVAL_BATCH_SIZE}", "--gradient_accumulation_steps", "1", "--evaluation_strategy", "no", "--save_strategy", "steps", "--save_steps", "1200", "--save_total_limit", "10", "--learning_rate", "${LEARNING_RATE}", "--weight_decay", "0.", "--warmup_ratio", "0.03", "--lr_scheduler_type", "cosine", "--logging_steps", "1", "--tf32", "False", "--model_max_length", "${MODEL_MAX_LENGTH}", "--q_lora", "True", "--deepspeed", "/playground/deepspeed_config_s2.json"]
+
