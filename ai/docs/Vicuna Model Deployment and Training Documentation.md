@@ -91,11 +91,11 @@ One sample of the json dataset file is like this:
         ]
     },
 ```
-An example is like "./antrea/ai/vicuna/dataset/dummy_conversation.json". After the model and dataset being set ready, you should change to the "./antrea/ai/vicuna/train_full" directory for full parameter fine-tuning, or "./antrea/ai/vicuna/train_qlora" for QLoRA fine-tuning.
+An example is like "./antrea/ai/vicuna/dataset/example.json". After the model and dataset being set ready, you should change to the "./antrea/ai/vicuna/train_full" directory for full parameter fine-tuning, or "./antrea/ai/vicuna/train_qlora" for QLoRA fine-tuning.
 
 ### 2.Build container for training
 
-Attention, all the path type environment variables like DATA_PATH, MODEL_PATH, MODEL_OUTPUT and so on are folders mapped to docker container, they should be set according to volume mapping in "docker-compose.yml". For example, set DATA_PATH into "/dataset/dummy_conversation.json" for host path "./antrea/ai/vicuna/dataset/dummy_conversation.json". We also mentioned this in deployment.
+Attention, all the path type environment variables like DATA_PATH, MODEL_PATH, MODEL_OUTPUT and so on are folders mapped to docker container, they should be set according to volume mapping in "docker-compose.yml". For example, set DATA_PATH into "/dataset/example.json" for host path "./antrea/ai/vicuna/dataset/example.json". We also mentioned this in deployment.
 
 Some training parameters are not considered environment variables, such as "--save_steps", "--logging_steps", etc. You can change them in "docker-compose.yml" if you want.
 
@@ -117,7 +117,7 @@ Then, run the command below, to start the container and training.
 docker-compose up
 ```
 
-The QLoRA training uses deepspeed package, and the deepspeed configuration file in "./antrea/ai/vicuna/playground". You can change the configuration by creating new configuration files and sending it into the "--deepspeed" argument in "docker-compose.yml".
+The QLoRA training uses deepspeed package, and the deepspeed configuration file in "./antrea/ai/vicuna/train_qlora/playground". You can change the configuration by creating new configuration files and sending it into the "--deepspeed" argument in "docker-compose.yml".
 
 If you're suffering with out-of-memory error with your GPU, you may try setting your MODEL_MAX_LENGTH and LORA_R lower. If you want to fully utilize your GPU memory you can also increase them or increase the PER_DEVICE_TRAIN_BATCH_SIZE. You can also set some environment variables such as PYTORCH_CUDA_ALLOC_CONF by different sizes of "max_split_size_mb" for GPU memory management. For more information, please refer to [the official pytorch docs of cuda](https://pytorch.org/docs/stable/notes/cuda.html#environment-variables).
 

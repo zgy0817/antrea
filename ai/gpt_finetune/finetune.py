@@ -3,6 +3,12 @@ from pathlib import Path
 import argparse
 from utils import parse_cfg_file
 
+'''
+This script will first process the arguments and configurations, then choose the right form of the command that submitting fine-tuning job.
+The job-submitting takes 2 steps: upload the formatted training data file, then create the fine-tuning job.
+The fine-tuning job id will be shown in stdout.
+'''
+
 parser = argparse.ArgumentParser(description='This script will upload your formatted training file and create the fine-tuning job.')
 parser.add_argument('-k', '--key', type=str, help='OpenAI API key')
 parser.add_argument('-d', '--data', type=str, help='Training data in jsonl')

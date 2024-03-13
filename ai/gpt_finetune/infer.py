@@ -2,6 +2,11 @@ from openai import OpenAI
 import argparse
 from utils import parse_cfg_file
 
+'''
+This script will first process the arguments and configurations, then call the corresponding API for chat completions.
+If the model name isn't set, the fine-tuning job id will be used to get the model name.
+'''
+
 parser = argparse.ArgumentParser(description='This script will call your fine-tuned model to answer your question.')
 parser.add_argument('-k', '--key', type=str, help='OpenAI API key')
 parser.add_argument('-j', '--job', type=str, help='Fine-tuning job-id')
